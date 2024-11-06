@@ -1,15 +1,31 @@
-import React, { useState, useEffect } from "react";
-
+import React, { useState, useEffect, useRef } from "react";
 import {
   Box,
   Text,
   Flex,
   Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableColumnHeader,
-  TableCell,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
+  Select,
+  Progress,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalCloseButton,
+  ModalBody,
+  ModalFooter,
+  Button,
+  Input,
+  FormControl,
+  FormLabel,
+  Slider,
+  SliderTrack,
+  SliderFilledTrack,
+  SliderThumb,
 } from "@chakra-ui/react";
 
 interface Task {
@@ -24,6 +40,8 @@ interface Task {
   risk: string;
   progress: number;
 }
+
+
 
 const tasks: Task[] = [
   {
@@ -62,40 +80,15 @@ const tasks: Task[] = [
     risk: "High",
     progress: 80,
   },
-  {
-    id: "4",
-    name: "Task 3",
-    plannedStart: "2024-11-05",
-    plannedEnd: "2024-11-10",
-    actualStart: "2024-11-05",
-    actualEnd: "2024-11-09",
-    duration: "4 days",
-    dependency: "Task 1",
-    risk: "High",
-    progress: 80,
-  },
 ];
 
-// Helper function to generate date range
-const generateDateRange = (startDate: string, endDate: string) => {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const dates: string[] = [];
-
-  for (let dt = start; dt <= end; dt.setDate(dt.getDate() + 1)) {
-    dates.push(dt.toISOString().split("T")[0]);
-  }
-
-  return dates;
-};
-
-const generateDate = (
-  StartDate: string,
-  EndDate: string,
+const generateDateRange = (
+  startDate: string,
+  endDate: string,
   zoomLevel: string
 ) => {
-  const start = new Date(StartDate);
-  const end = new Date(EndDate);
+  const start = new Date(startDate);
+  const end = new Date(endDate);
   const dates: string[] = [];
 
   switch (zoomLevel) {
@@ -114,20 +107,19 @@ const generateDate = (
         dates.push(dt.toISOString().split("T")[0]);
       }
       break;
-    case "years":
-      for (let dt = start; dt <= end; dt.setFullYear(dt.getFullYear() + 1)) {
+    case "quarters":
+      for (let dt = start; dt <= end; dt.setMonth(dt.getMonth() + 3)) {
         dates.push(dt.toISOString().split("T")[0]);
       }
       break;
-    case "quarters":
-      for (let dt = start; dt <= end; dt.setMonth(dt.getMonth() + 3)) {
+    case "years":
+      for (let dt = start; dt <= end; dt.setFullYear(dt.getFullYear() + 1)) {
         dates.push(dt.toISOString().split("T")[0]);
       }
       break;
     default:
       break;
   }
-
   return dates;
 };
 
@@ -135,156 +127,246 @@ const TaskListPanel: React.FC<{
   width: string;
   selectedTaskId: string;
   onSelectTask: (id: string) => void;
-}> = ({ width, selectedTaskId, onSelectTask }) => {
+}> = ({ selectedTaskId, onSelectTask, width }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newTask, setNewTask] = useState({
+    name: "",
+    plannedStart: "",
+    plannedEnd: "",
+    actualStart: "",
+    actualEnd: "",
+    duration: 0,
+    dependency: "",
+    risk: "Medium",
+    progress: 0,
+  });
+
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (newTask.plannedStart && newTask.plannedEnd) {
+      const startDate = new Date(newTask.plannedStart);
+      const endDate = new Date(newTask.plannedEnd);
+      const timeDiff = endDate.getTime() - startDate.getTime();
+      const daysDiff = timeDiff / (1000 * 3600 * 24);
+      setNewTask((prev) => ({
+        ...prev,
+        duration: daysDiff,
+      }));
+    }
+  }, [newTask.plannedStart, newTask.plannedEnd]);
+
+  const handleAddTaskClick = () => {
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setNewTask((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleSliderMouseMove = (e: React.MouseEvent) => {
+    const sliderRect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - sliderRect.left;
+    const percentage = (x / sliderRect.width) * 100;
+    setTooltipPos({
+      x: e.clientX,
+      y: e.clientY,
+    });
+    setNewTask((prev) => ({
+      ...prev,
+      progress: Math.min(Math.max(percentage, 0), 100),
+    }));
+  };
+
+  const handleRiskChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      risk: e.target.value,
+    }));
+  };
+
+  const handleProgressChange = (value: number) => {
+    setNewTask((prev) => ({
+      ...prev,
+      progress: value,
+    }));
+  };
+
   return (
-    <Box
-      width={width}
-      pl={4}
-      pe={0}
-      py={4}
-      overflowY="auto"
-      height="100vh"
-      overflowX={"auto"}
-    >
-      <Text fontSize="xl" fontWeight="bold" mb={4}>
-        Task Details
-      </Text>
-      <Table.Root
-        border={"1px solid"}
+    <Box width={width} p={2} overflowY="auto" height="100vh">
+      <Flex>
+        <Text fontSize="xl" fontWeight="bold" mb={4}>
+          Task Details
+        </Text>
+        <Button onClick={handleAddTaskClick}>Add Task</Button>
+      </Flex>
+
+      <Table
+        border={"1px"}
         borderColor={"gray.200"}
+        variant="simple"
         colorScheme="gray"
       >
-        <TableHeader>
-          <TableRow>
-            <TableColumnHeader
-              textAlign={"center"}
-              borderRight={"1px solid"}
+        <Thead>
+          <Tr fontSize="5px">
+            <Th
               borderColor={"gray.200"}
-              minWidth="100px"
-              p={2}
-              py={5}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
             >
               Task Name
-            </TableColumnHeader>
-            <TableColumnHeader
-              minWidth="120px"
-              p={2}
-              py={5}
-              borderRight={"1px solid"}
+            </Th>
+            <Th
               borderColor={"gray.200"}
-              textAlign={"center"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"160px"}
             >
               Planned Start
-            </TableColumnHeader>
-            <TableColumnHeader
-              minWidth="120px"
-              p={2}
-              py={5}
-              borderRight={"1px solid"}
+            </Th>
+            <Th
               borderColor={"gray.200"}
-              textAlign={"center"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"160px"}
             >
               Planned End
-            </TableColumnHeader>
-            <TableColumnHeader
-              minWidth="120px"
-              p={2}
-              py={5}
-              borderRight={"1px solid"}
+            </Th>
+            <Th
               borderColor={"gray.200"}
-              textAlign={"center"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
             >
               Actual Start
-            </TableColumnHeader>
-            <TableColumnHeader
-              minWidth="120px"
-              p={2}
-              py={5}
-              borderRight={"1px solid"}
+            </Th>
+            <Th
               borderColor={"gray.200"}
-              textAlign={"center"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
             >
               Actual End
-            </TableColumnHeader>
-            <TableColumnHeader
-              minWidth="100px"
-              p={2}
-              py={5}
-              borderRight={"1px solid"}
+            </Th>
+            <Th
               borderColor={"gray.200"}
-              textAlign={"center"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
             >
               Duration
-            </TableColumnHeader>
-            <TableColumnHeader
-              minWidth="120px"
-              p={2}
-              py={5}
-              borderRight={"1px solid"}
+            </Th>
+            <Th
               borderColor={"gray.200"}
-              textAlign={"center"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
             >
               Dependency
-            </TableColumnHeader>
-            <TableColumnHeader
-              minWidth="100px"
-              p={2}
-              py={5}
-              borderRight={"1px solid"}
+            </Th>
+            <Th
               borderColor={"gray.200"}
-              textAlign={"center"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"120px"}
             >
               Risk
-            </TableColumnHeader>
-            <TableColumnHeader
-              minWidth="100px"
-              p={2}
-              py={5}
-              borderRight={"1px solid"}
+            </Th>
+            <Th
               borderColor={"gray.200"}
-              textAlign={"center"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"120px"}
             >
               Progress
-            </TableColumnHeader>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+            </Th>
+          </Tr>
+        </Thead>
+        <Tbody>
           {tasks.map((task) => (
-            <TableRow
+            <Tr
+              fontSize="sm"
               key={task.id}
-              borderBottom="1px solid"
-              borderColor="gray.300"
-              _hover={{ backgroundColor: "gray.200", cursor: "pointer" }}
               bg={selectedTaskId === task.id ? "blue.100" : "white"}
               onClick={() => onSelectTask(task.id)}
+              _hover={{ bg: "gray.100", cursor: "pointer" }}
             >
-              <TableCell p={2} py={4} textAlign={"center"}>
+              <Td
+                borderColor={"gray.200"}
+                borderRightWidth="1px"
+                textAlign="center"
+              >
                 {task.name}
-              </TableCell>
-              <TableCell p={2} py={4} textAlign={"center"}>
+              </Td>
+              <Td
+                borderColor={"gray.200"}
+                borderRightWidth="1px"
+                textAlign="center"
+              >
                 {task.plannedStart}
-              </TableCell>
-              <TableCell p={2} py={4} textAlign={"center"}>
+              </Td>
+              <Td
+                borderColor={"gray.200"}
+                borderRightWidth="1px"
+                textAlign="center"
+              >
                 {task.plannedEnd}
-              </TableCell>
-              <TableCell p={2} py={4} textAlign={"center"}>
+              </Td>
+              <Td
+                borderColor={"gray.200"}
+                borderRightWidth="1px"
+                textAlign="center"
+              >
                 {task.actualStart}
-              </TableCell>
-              <TableCell p={2} py={4} textAlign={"center"}>
+              </Td>
+              <Td
+                borderColor={"gray.200"}
+                borderRightWidth="1px"
+                textAlign="center"
+              >
                 {task.actualEnd}
-              </TableCell>
-              <TableCell p={2} py={4} textAlign={"center"}>
+              </Td>
+              <Td
+                borderColor={"gray.200"}
+                borderRightWidth="1px"
+                textAlign="center"
+              >
                 {task.duration}
-              </TableCell>
-              <TableCell p={2} py={4} textAlign={"center"}>
+              </Td>
+              <Td
+                borderColor={"gray.200"}
+                borderRightWidth="1px"
+                textAlign="center"
+              >
                 {task.dependency}
-              </TableCell>
-              <TableCell p={2} py={4} textAlign={"center"}>
+              </Td>
+              <Td
+                borderColor={"gray.200"}
+                borderRightWidth="1px"
+                textAlign="center"
+              >
                 {task.risk}
-              </TableCell>
-              <TableCell p={2} py={4} textAlign={"center"}>
+              </Td>
+              <Td
+                borderColor={"gray.200"}
+                borderRightWidth="1px"
+                textAlign="center"
+              >
                 <Box width="100%">
-                  <Box
+                  <Progress
                     height="5px"
                     width={`${task.progress}%`}
                     backgroundColor={
@@ -297,11 +379,159 @@ const TaskListPanel: React.FC<{
                     borderRadius="md"
                   />
                 </Box>
-              </TableCell>
-            </TableRow>
+              </Td>
+            </Tr>
           ))}
-        </TableBody>
-      </Table.Root>
+        </Tbody>
+      </Table>
+
+      <Modal isOpen={isModalOpen} onClose={handleCloseModal}>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Add New Task</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <FormControl id="taskName" isRequired>
+              <FormLabel>Task Name</FormLabel>
+              <Input
+                value={newTask.name}
+                onChange={handleInputChange}
+                name="name"
+                placeholder="Enter task name"
+              />
+            </FormControl>
+
+            <FormControl id="plannedStart" isRequired>
+              <FormLabel>Planned Start</FormLabel>
+              <Input
+                type="date"
+                value={newTask.plannedStart}
+                onChange={handleInputChange}
+                name="plannedStart"
+              />
+            </FormControl>
+
+            <FormControl id="plannedEnd" isRequired>
+              <FormLabel>Planned End</FormLabel>
+              <Input
+                type="date"
+                value={newTask.plannedEnd}
+                onChange={handleInputChange}
+                name="plannedEnd"
+              />
+            </FormControl>
+
+            <FormControl id="actualStart" isRequired>
+              <FormLabel>Actual Start</FormLabel>
+              <Input
+                type="date"
+                value={newTask.actualStart}
+                onChange={handleInputChange}
+                name="actualStart"
+              />
+            </FormControl>
+
+            <FormControl id="actualEnd" isRequired>
+              <FormLabel>Actual End</FormLabel>
+              <Input
+                type="date"
+                value={newTask.actualEnd}
+                onChange={handleInputChange}
+                name="actualEnd"
+              />
+            </FormControl>
+
+            <FormControl id="duration" isRequired>
+              <FormLabel>Duration (in days)</FormLabel>
+              <Input
+                type="number"
+                value={newTask.duration}
+                onChange={handleInputChange}
+                name="duration"
+                isReadOnly
+                disabled
+              />
+            </FormControl>
+
+            <FormControl id="dependency" isRequired>
+              <FormLabel>Dependency</FormLabel>
+              <Input
+                value={newTask.dependency}
+                onChange={handleInputChange}
+                name="dependency"
+                placeholder="Dependency task"
+              />
+            </FormControl>
+
+            <FormControl id="risk" isRequired>
+              <FormLabel>Risk Level</FormLabel>
+              <Select
+                value={newTask.risk}
+                onChange={handleRiskChange}
+                name="risk"
+            
+              >
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+              </Select>
+            </FormControl>
+
+            <FormControl id="progress" mt={4}>
+              <FormLabel>Progress</FormLabel>
+              <Box position="relative" onMouseMove={handleSliderMouseMove}>
+                <Slider
+                  value={newTask.progress}
+                  onChange={handleProgressChange}
+                  min={0}
+                  max={100}
+                  step={1}
+                  aria-label="Progress slider"
+                >
+                  <SliderTrack>
+                    <SliderFilledTrack />
+                  </SliderTrack>
+                  <SliderThumb />
+                </Slider>
+                <Box
+                  ref={tooltipRef}
+                  position="absolute"
+                  top={-2}
+                  left={90}
+                  transform="translateX(-50%) translateY(-100%)"
+                  bg="gray.700"
+                  color="white"
+                  height={7}
+                  width={7}
+                  borderRadius="50px"
+                  padding="4px"
+                  py={2}
+                  textAlign={"center"}
+                  fontSize="10px"
+                  opacity={newTask.progress === 0 ? 0 : 1}
+                >
+                  {Math.round(newTask.progress)}%
+                </Box>
+              </Box>
+            </FormControl>
+          </ModalBody>
+
+          <ModalFooter>
+            <Button variant="ghost" onClick={handleCloseModal}>
+              Cancel
+            </Button>
+            <Button
+              colorScheme="blue"
+              onClick={() => {
+                console.log("New Task Data:", newTask);
+                handleCloseModal();
+              }}
+            >
+              Save Task
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Box>
   );
 };
@@ -311,21 +541,32 @@ const TimelinePanel: React.FC<{
   selectedTaskId: string;
   zoomLevel: string;
   onZoomChange: (level: string) => void;
-}> = ({ width, selectedTaskId, zoomLevel, onZoomChange }) => {
+}> = ({ zoomLevel, onZoomChange, width, selectedTaskId }) => {
   const startDates = tasks.map((task) => new Date(task.plannedStart).getTime());
   const endDates = tasks.map((task) => new Date(task.plannedEnd).getTime());
 
   const minDate = new Date(Math.min(...startDates));
   const maxDate = new Date(Math.max(...endDates));
 
-  const dateRange = generateDate(
+  const dateRange = generateDateRange(
     minDate.toISOString().split("T")[0],
     maxDate.toISOString().split("T")[0],
     zoomLevel
   );
-  const years = Array.from(
-    new Set(dateRange.map((date) => new Date(date).getFullYear()))
-  );
+
+
+  const getYearRow = () => {
+    return Array.from(new Set(dateRange.map((date) => new Date(date).getFullYear())));
+  };
+
+  const getMonthName = (date: string) => {
+    return new Date(date).toLocaleDateString("en-US", { month: "short" });
+  };
+
+  const getDate = (date: string) => {
+    return new Date(date).toLocaleDateString("en-US", { day: "2-digit", month: "short" });
+  };
+
   const formatDate = (date: Date) => {
     const options: Intl.DateTimeFormatOptions = {
       day: "2-digit",
@@ -335,122 +576,99 @@ const TimelinePanel: React.FC<{
   };
 
   return (
-    <Box width={width} pl={0} pe={4} py={5} overflowY="auto" height="100vh">
-      <Flex gap={5} align={"center"} pl={5}>
-        <Text fontSize="xl" fontWeight="bold" mb={3}>
+    <Box width={width} pe={2} py={2} overflowY="auto" height="100vh">
+      <Flex align="center" mb={2}>
+        <Text px={2} fontSize="xl" fontWeight="bold" mr={4}>
           Timeline
         </Text>
-        <Flex mb={3}>
-          <Text>Zoom : </Text>
-          <select
-            className="px-5"
+        <Flex align="center">
+          <Text mr={2}>Zoom:</Text>
+          <Select
+            width="120px"
             value={zoomLevel}
             onChange={(e) => onZoomChange(e.target.value)}
           >
-            <option value="days" className="px-5">
-              Days
-            </option>
-            <option value="quarters">Quarters</option>
+            <option value="days">Days</option>
             <option value="weeks">Weeks</option>
             <option value="months">Months</option>
+            <option value="quarters">Quarters</option>
             <option value="years">Years</option>
-          </select>
+          </Select>
         </Flex>
       </Flex>
-      <Table.Root
-        border={"1px solid"}
+      <Table
+        border={"1px"}
         borderColor={"gray.200"}
+        variant="simple"
         colorScheme="gray"
       >
-        <TableHeader>
-          <TableRow>
+        <Thead>
+          <Tr>
             {dateRange.map((date) => (
-              <TableColumnHeader
-                borderRight={"1px solid"}
+              <Th
                 borderColor={"gray.200"}
-                textAlign={"center"}
+                borderRightWidth="1px"
+                minWidth={"100px"}
                 key={date}
-                minWidth="80px"
-                p={2}
-                py={5}
+                textAlign="center"
               >
-                <TableRow>
-                  <Text>{formatDate(new Date(date))}</Text>
-                </TableRow>
-              </TableColumnHeader>
+                {new Date(date).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "2-digit",
+                })}
+              </Th>
             ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+          </Tr>
+        </Thead>
+        <Tbody>
           {tasks.map((task) => {
-            const plannedStartIdx = dateRange.findIndex(
-              (date) => date === task.plannedStart
-            );
-            const plannedEndIdx = dateRange.findIndex(
-              (date) => date === task.plannedEnd
-            );
+            const plannedStartIdx = dateRange.indexOf(task.plannedStart);
+            const plannedEndIdx = dateRange.indexOf(task.plannedEnd);
+            const actualStartIdx = dateRange.indexOf(task.actualStart);
+            const actualEndIdx = dateRange.indexOf(task.actualEnd);
 
-            const actualStartIdx = dateRange.findIndex(
-              (date) => date === task.actualStart
-            );
-            const actualEndIdx = dateRange.findIndex(
-              (date) => date === task.actualEnd
-            );
-            const plannedWidth = plannedEndIdx - plannedStartIdx + 1;
-            const actualWidth = actualEndIdx - actualStartIdx + 1;
             return (
-              <TableRow
+              <Tr
                 key={task.id}
                 bg={selectedTaskId === task.id ? "blue.100" : "white"}
               >
                 {dateRange.map((date, idx) => (
-                  <TableCell
-                    borderRight={"1px solid"}
+                  <Td
                     borderColor={"gray.200"}
-                    textAlign={"center"}
+                    borderRightWidth="1px"
+                    height={"52px"}
                     key={date}
-                    p={0}
-                    py={6}
-                    pb={7}
                     position="relative"
                   >
-                    {/* Planned Bar */}
                     {idx === plannedStartIdx && (
-                      <Box
+                      <Progress
                         position="absolute"
-                        top="35%"
-                        left="2"
-                        p={2}
-                        transform="translateY(-50%)"
-                        height="15px"
-                        width={`${plannedWidth * 100}%`}
-                        backgroundColor="blue.400"
+                        top="20%"
+                        h="12px"
+                        left={1}
+                        w={`${plannedEndIdx - plannedStartIdx + 1}00%`}
+                        bg="blue.400"
                         borderRadius="md"
-                        cursor="pointer"
                       />
                     )}
-                    {/* Actual Bar */}
                     {idx === actualStartIdx && (
-                      <Box
+                      <Progress
                         position="absolute"
-                        top="65%"
-                        left="2"
-                        p={2}
-                        transform="translateY(-50%)"
-                        height="15px"
-                        width={`${actualWidth * 100}%`}
-                        backgroundColor="green.300"
+                        top="50%"
+                        h="12px"
+                        left={1}
+                        w={`${actualEndIdx - actualStartIdx + 1}00%`}
+                        bg="green.300"
                         borderRadius="md"
-                        cursor="pointer"
                       />
                     )}
-                  </TableCell>
+                  </Td>
                 ))}
-              </TableRow>
+              </Tr>
             );
           })}
-        </TableBody>
-      </Table.Root>
+        </Tbody>
+      </Table>
     </Box>
   );
 };
@@ -467,7 +685,7 @@ const App: React.FC = () => {
 
   const handleMouseMove = (event: MouseEvent) => {
     if (isDragging) {
-      const newWidth = `${event.clientX}px`;
+      const newWidth = `${event.clientX - 20}px`;
       setPanelWidth(newWidth);
     }
   };
@@ -491,14 +709,14 @@ const App: React.FC = () => {
   }, [isDragging]);
 
   return (
-    <Flex height="100vh">
+    <Flex style={{ height: "100vh" }}>
       <TaskListPanel
         width={panelWidth}
         selectedTaskId={selectedTaskId}
         onSelectTask={setSelectedTaskId}
       />
       <Box
-        width="5px"
+        width="2px"
         bg="gray.300"
         cursor="col-resize"
         onMouseDown={handleMouseDown}
