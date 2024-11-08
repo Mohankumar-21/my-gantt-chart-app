@@ -716,8 +716,9 @@ const App: React.FC = () => {
         onSelectTask={setSelectedTaskId}
       />
       <Box
-        width="2px"
+        width="5px"
         bg="gray.300"
+    
         cursor="col-resize"
         onMouseDown={handleMouseDown}
       />
