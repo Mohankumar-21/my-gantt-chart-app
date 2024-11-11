@@ -26,6 +26,7 @@ import {
   SliderTrack,
   SliderFilledTrack,
   SliderThumb,
+  Tooltip,
 } from "@chakra-ui/react";
 
 interface Task {
@@ -36,12 +37,13 @@ interface Task {
   actualStart: string;
   actualEnd: string;
   duration: string;
+  actualDuration?: string;
   dependency: string;
   risk: string;
   progress: number;
+  role?: string;
+  stage?: string;
 }
-
-
 
 const tasks: Task[] = [
   {
@@ -139,6 +141,9 @@ const TaskListPanel: React.FC<{
     dependency: "",
     risk: "Medium",
     progress: 0,
+    role: "Coordinator",
+    stage: "DR-1",
+    actualDuration: 0,
   });
 
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({
@@ -147,18 +152,32 @@ const TaskListPanel: React.FC<{
   });
   const tooltipRef = useRef<HTMLDivElement | null>(null);
 
+  // Update plannedEnd based on plannedStart and duration
   useEffect(() => {
-    if (newTask.plannedStart && newTask.plannedEnd) {
+    if (newTask.plannedStart && newTask.duration) {
       const startDate = new Date(newTask.plannedStart);
-      const endDate = new Date(newTask.plannedEnd);
-      const timeDiff = endDate.getTime() - startDate.getTime();
-      const daysDiff = timeDiff / (1000 * 3600 * 24);
+      startDate.setDate(startDate.getDate() + newTask.duration);
+      const plannedEndDate = startDate.toISOString().split("T")[0];
+
       setNewTask((prev) => ({
         ...prev,
-        duration: daysDiff,
+        plannedEnd: plannedEndDate,
       }));
     }
-  }, [newTask.plannedStart, newTask.plannedEnd]);
+  }, [newTask.plannedStart, newTask.duration]);
+
+  useEffect(() => {
+    if (newTask.actualStart && newTask.actualDuration) {
+      const startDate = new Date(newTask.actualStart);
+      startDate.setDate(startDate.getDate() + newTask.actualDuration);
+      const actualEndDate = startDate.toISOString().split("T")[0];
+
+      setNewTask((prev) => ({
+        ...prev,
+        actualEnd: actualEndDate,
+      }));
+    }
+  }, [newTask.actualStart, newTask.actualDuration]);
 
   const handleAddTaskClick = () => {
     setIsModalOpen(true);
@@ -173,6 +192,53 @@ const TaskListPanel: React.FC<{
     setNewTask((prev) => ({
       ...prev,
       [name]: value,
+    }));
+  };
+  const handleDurationChange = (change: number) => {
+    setNewTask((prev) => {
+      const newDuration = prev.duration + change;
+      return {
+        ...prev,
+        duration: Math.max(newDuration, 0),
+      };
+    });
+  };
+
+  const handleActualDurationChange = (change: number) => {
+    setNewTask((prev) => {
+      const newDuration = prev.actualDuration + change;
+      return {
+        ...prev,
+        actualDuration: Math.max(newDuration, 0),
+      };
+    });
+  };
+
+  const handleRiskChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      risk: e.target.value,
+    }));
+  };
+
+  const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      role: e.target.value,
+    }));
+  };
+
+  const handleStageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      stage: e.target.value,
+    }));
+  };
+
+  const handleProgressChange = (value: number) => {
+    setNewTask((prev) => ({
+      ...prev,
+      progress: value,
     }));
   };
 
@@ -190,27 +256,30 @@ const TaskListPanel: React.FC<{
     }));
   };
 
-  const handleRiskChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setNewTask((prev) => ({
-      ...prev,
-      risk: e.target.value,
-    }));
-  };
-
-  const handleProgressChange = (value: number) => {
-    setNewTask((prev) => ({
-      ...prev,
-      progress: value,
-    }));
-  };
-
   return (
     <Box width={width} p={2} overflowY="auto" height="100vh">
-      <Flex>
+      <Flex gap={5}>
         <Text fontSize="xl" fontWeight="bold" mb={4}>
           Task Details
         </Text>
-        <Button onClick={handleAddTaskClick}>Add Task</Button>
+        <Button
+          onClick={handleAddTaskClick}
+          bg="teal.500"
+          color="white"
+          size="sm"
+          fontWeight="bold"
+          borderRadius="md"
+          _hover={{
+            bg: "teal.600",
+            transform: "scale(1.05)",
+          }}
+          _active={{
+            bg: "teal.700",
+            transform: "scale(1.02)",
+          }}
+        >
+          + Add Task
+        </Button>
       </Flex>
 
       <Table
@@ -385,91 +454,245 @@ const TaskListPanel: React.FC<{
         </Tbody>
       </Table>
 
-      <Modal isOpen={isModalOpen} onClose={handleCloseModal}>
+      <Modal isOpen={isModalOpen} onClose={handleCloseModal} size="lg">
         <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Add New Task</ModalHeader>
+        <ModalContent minWidth={650} borderRadius="md" boxShadow="xl">
+          <ModalHeader
+            fontSize="lg"
+            fontWeight="semibold"
+            color="teal.600"
+            fontFamily="'Inter', sans-serif"
+          >
+            Add New Task
+          </ModalHeader>
           <ModalCloseButton />
-          <ModalBody>
+          <ModalBody pb={6} fontFamily="'Inter', sans-serif">
             <FormControl id="taskName" isRequired>
-              <FormLabel>Task Name</FormLabel>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Task Name
+              </FormLabel>
               <Input
                 value={newTask.name}
                 onChange={handleInputChange}
                 name="name"
                 placeholder="Enter task name"
+                fontSize="sm"
+                p={3}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
               />
             </FormControl>
 
-            <FormControl id="plannedStart" isRequired>
-              <FormLabel>Planned Start</FormLabel>
-              <Input
-                type="date"
-                value={newTask.plannedStart}
-                onChange={handleInputChange}
-                name="plannedStart"
-              />
+            <FormControl mt={5} id="planned" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Planned
+              </FormLabel>
+              <Flex justify="space-between" align="center" mt={3}>
+                <Box flex="1" mr={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    Start
+                  </FormLabel>
+                  <Input
+                    type="date"
+                    value={newTask.plannedStart}
+                    onChange={handleInputChange}
+                    name="plannedStart"
+                    fontSize="sm"
+                    p={3}
+                    borderColor="gray.300"
+                    _hover={{ borderColor: "teal.500" }}
+                    _focus={{ borderColor: "teal.500" }}
+                  />
+                </Box>
+
+                <Box flex="1" mx={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    Duration (in days)
+                  </FormLabel>
+                  <Flex alignItems="center" justify="center">
+                    <Button
+                      onClick={() => handleDurationChange(-1)}
+                      fontSize="sm"
+                      variant="outline"
+                      colorScheme="teal"
+                      _hover={{ bg: "teal.100" }}
+                    >
+                      -
+                    </Button>
+                    <Text mx={3} fontSize="sm" fontWeight="semibold">
+                      {newTask.duration} days
+                    </Text>
+                    <Button
+                      onClick={() => handleDurationChange(1)}
+                      fontSize="sm"
+                      variant="outline"
+                      colorScheme="teal"
+                      _hover={{ bg: "teal.100" }}
+                    >
+                      +
+                    </Button>
+                  </Flex>
+                </Box>
+
+                {/* Planned End */}
+                <Box flex="1" ml={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    End
+                  </FormLabel>
+                  <Input
+                    type="date"
+                    value={newTask.plannedEnd}
+                    isReadOnly
+                    disabled
+                    fontSize="sm"
+                    p={3}
+                    borderColor="gray.300"
+                    _focus={{ borderColor: "gray.300" }}
+                  />
+                </Box>
+              </Flex>
             </FormControl>
 
-            <FormControl id="plannedEnd" isRequired>
-              <FormLabel>Planned End</FormLabel>
-              <Input
-                type="date"
-                value={newTask.plannedEnd}
-                onChange={handleInputChange}
-                name="plannedEnd"
-              />
+            <FormControl mt={5} id="actual" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Actual
+              </FormLabel>
+              <Flex justify="space-between" align="center" mt={3}>
+                <Box flex="1" mr={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    Start
+                  </FormLabel>
+                  <Input
+                    type="date"
+                    value={newTask.actualStart}
+                    onChange={handleInputChange}
+                    name="actualStart"
+                    fontSize="sm"
+                    p={3}
+                    borderColor="gray.300"
+                    _hover={{ borderColor: "teal.500" }}
+                    _focus={{ borderColor: "teal.500" }}
+                  />
+                </Box>
+
+                <Box flex="1" mx={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    Duration (in days)
+                  </FormLabel>
+                  <Flex alignItems="center" justify="center">
+                    <Button
+                      onClick={() => handleActualDurationChange(-1)}
+                      fontSize="sm"
+                      variant="outline"
+                      colorScheme="teal"
+                      _hover={{ bg: "teal.100" }}
+                    >
+                      -
+                    </Button>
+                    <Text mx={3} fontSize="sm" fontWeight="semibold">
+                      {newTask.actualDuration} days
+                    </Text>
+                    <Button
+                      onClick={() => handleActualDurationChange(1)}
+                      fontSize="sm"
+                      variant="outline"
+                      colorScheme="teal"
+                      _hover={{ bg: "teal.100" }}
+                    >
+                      +
+                    </Button>
+                  </Flex>
+                </Box>
+
+                <Box flex="1" ml={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    End
+                  </FormLabel>
+                  <Input
+                    type="date"
+                    value={newTask.actualEnd}
+                    isReadOnly
+                    disabled
+                    fontSize="sm"
+                    p={3}
+                    borderColor="gray.300"
+                    _focus={{ borderColor: "gray.300" }}
+                  />
+                </Box>
+              </Flex>
             </FormControl>
 
-            <FormControl id="actualStart" isRequired>
-              <FormLabel>Actual Start</FormLabel>
-              <Input
-                type="date"
-                value={newTask.actualStart}
-                onChange={handleInputChange}
-                name="actualStart"
-              />
-            </FormControl>
-
-            <FormControl id="actualEnd" isRequired>
-              <FormLabel>Actual End</FormLabel>
-              <Input
-                type="date"
-                value={newTask.actualEnd}
-                onChange={handleInputChange}
-                name="actualEnd"
-              />
-            </FormControl>
-
-            <FormControl id="duration" isRequired>
-              <FormLabel>Duration (in days)</FormLabel>
-              <Input
-                type="number"
-                value={newTask.duration}
-                onChange={handleInputChange}
-                name="duration"
-                isReadOnly
-                disabled
-              />
-            </FormControl>
-
-            <FormControl id="dependency" isRequired>
-              <FormLabel>Dependency</FormLabel>
+            <FormControl mt={5} id="dependency" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Dependency
+              </FormLabel>
               <Input
                 value={newTask.dependency}
                 onChange={handleInputChange}
                 name="dependency"
                 placeholder="Dependency task"
+                fontSize="sm"
+                p={3}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
               />
             </FormControl>
 
-            <FormControl id="risk" isRequired>
-              <FormLabel>Risk Level</FormLabel>
+            <FormControl mt={3} id="role" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Role
+              </FormLabel>
+              <Select
+                value={newTask.role}
+                onChange={handleRoleChange}
+                name="role"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="Low">Coordinator</option>
+                <option value="Medium">Manager</option>
+                <option value="High">User</option>
+              </Select>
+            </FormControl>
+
+            <FormControl mt={3} id="stage" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Stage
+              </FormLabel>
+              <Select
+                value={newTask.stage}
+                onChange={handleStageChange}
+                name="stage"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="Low">DR-1</option>
+                <option value="Medium">DR-2</option>
+                <option value="High">DR-3</option>
+              </Select>
+            </FormControl>
+
+            <FormControl mt={3} id="risk" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Risk Level
+              </FormLabel>
               <Select
                 value={newTask.risk}
                 onChange={handleRiskChange}
                 name="risk"
-            
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
               >
                 <option value="Low">Low</option>
                 <option value="Medium">Medium</option>
@@ -477,8 +700,10 @@ const TaskListPanel: React.FC<{
               </Select>
             </FormControl>
 
-            <FormControl id="progress" mt={4}>
-              <FormLabel>Progress</FormLabel>
+            <FormControl mt={5} id="progress">
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Progress
+              </FormLabel>
               <Box position="relative" onMouseMove={handleSliderMouseMove}>
                 <Slider
                   value={newTask.progress}
@@ -487,6 +712,7 @@ const TaskListPanel: React.FC<{
                   max={100}
                   step={1}
                   aria-label="Progress slider"
+                  size="sm"
                 >
                   <SliderTrack>
                     <SliderFilledTrack />
@@ -503,11 +729,11 @@ const TaskListPanel: React.FC<{
                   color="white"
                   height={7}
                   width={7}
-                  borderRadius="50px"
+                  borderRadius="50%"
                   padding="4px"
                   py={2}
-                  textAlign={"center"}
-                  fontSize="10px"
+                  textAlign="center"
+                  fontSize="9px"
                   opacity={newTask.progress === 0 ? 0 : 1}
                 >
                   {Math.round(newTask.progress)}%
@@ -517,15 +743,16 @@ const TaskListPanel: React.FC<{
           </ModalBody>
 
           <ModalFooter>
-            <Button variant="ghost" onClick={handleCloseModal}>
+            <Button variant="ghost" onClick={handleCloseModal} fontSize="sm">
               Cancel
             </Button>
             <Button
-              colorScheme="blue"
+              colorScheme="teal"
               onClick={() => {
                 console.log("New Task Data:", newTask);
                 handleCloseModal();
               }}
+              fontSize="md"
             >
               Save Task
             </Button>
@@ -554,9 +781,10 @@ const TimelinePanel: React.FC<{
     zoomLevel
   );
 
-
   const getYearRow = () => {
-    return Array.from(new Set(dateRange.map((date) => new Date(date).getFullYear())));
+    return Array.from(
+      new Set(dateRange.map((date) => new Date(date).getFullYear()))
+    );
   };
 
   const getMonthName = (date: string) => {
@@ -564,7 +792,10 @@ const TimelinePanel: React.FC<{
   };
 
   const getDate = (date: string) => {
-    return new Date(date).toLocaleDateString("en-US", { day: "2-digit", month: "short" });
+    return new Date(date).toLocaleDateString("en-US", {
+      day: "2-digit",
+      month: "short",
+    });
   };
 
   const formatDate = (date: Date) => {
@@ -641,15 +872,53 @@ const TimelinePanel: React.FC<{
                     position="relative"
                   >
                     {idx === plannedStartIdx && (
-                      <Progress
-                        position="absolute"
-                        top="20%"
-                        h="12px"
-                        left={1}
-                        w={`${plannedEndIdx - plannedStartIdx + 1}00%`}
-                        bg="blue.400"
-                        borderRadius="md"
-                      />
+                      <Tooltip
+                        label={
+                          <Box p={2} bg="white" borderRadius="md" shadow="md">
+                            <Text fontWeight="bold" mb={1}>
+                              {task.name}
+                            </Text>
+                            <Text>
+                              <strong>Duration:</strong> {task.duration} days
+                            </Text>
+                            <Text>
+                              <strong>Stage:</strong> {task.stage}
+                            </Text>
+                            <Text>
+                              <strong>Planned Start:</strong>{" "}
+                              {task.plannedStart}
+                            </Text>
+                            <Text>
+                              <strong>Planned End:</strong> {task.plannedEnd}
+                            </Text>
+                            <Text>
+                              <strong>Status:</strong>{" "}
+                              {task.progress === 100
+                                ? "Completed"
+                                : "In Progress"}
+                            </Text>
+                            <Text>
+                              <strong>Progress:</strong> {task.progress}%
+                            </Text>
+                          </Box>
+                        }
+                        aria-label="Task Details"
+                        placement="top"
+                        hasArrow
+                        openDelay={0}
+                        closeDelay={0}
+                      >
+                        <Progress
+                          position="absolute"
+                          top="20%"
+                          h="12px"
+                          cursor={"pointer"}
+                          left={1}
+                          w={`${plannedEndIdx - plannedStartIdx + 1}00%`}
+                          bg="blue.400"
+                          borderRadius="md"
+                        />
+                      </Tooltip>
                     )}
                     {idx === actualStartIdx && (
                       <Progress
@@ -718,7 +987,6 @@ const App: React.FC = () => {
       <Box
         width="5px"
         bg="gray.300"
-    
         cursor="col-resize"
         onMouseDown={handleMouseDown}
       />
