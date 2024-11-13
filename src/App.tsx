@@ -1,4 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faPlus,
+  faFolder,
+  faFolderOpen,
+ faFile,
+ faFileAlt,
+} from "@fortawesome/free-solid-svg-icons";
+
 import {
   Box,
   Text,
@@ -42,7 +51,9 @@ interface Task {
   risk: string;
   progress: number;
   role?: string;
+  type: string;
   stage?: string;
+  subtasks?: Task[];
 }
 
 const tasks: Task[] = [
@@ -50,13 +61,45 @@ const tasks: Task[] = [
     id: "1",
     name: "Task 1",
     plannedStart: "2024-11-01",
-    plannedEnd: "2024-11-10",
+    plannedEnd: "2027-11-10",
     actualStart: "2024-11-02",
     actualEnd: "2024-11-08",
     duration: "5 days",
+    stage: "DR-1",
     dependency: "None",
     risk: "Low",
+    type: "project",
     progress: 20,
+    subtasks: [
+      {
+        id: "1.1",
+        name: "Subtask 1.1",
+        plannedStart: "2024-11-01",
+        plannedEnd: "2024-11-07",
+        actualStart: "2024-11-02",
+        actualEnd: "2024-11-06",
+        duration: "5 days",
+        stage: "DR-1",
+        dependency: "None",
+        risk: "Low",
+        type: "task",
+        progress: 20,
+      },
+      {
+        id: "1.2",
+        name: "Subtask 1.2",
+        plannedStart: "2024-11-01",
+        plannedEnd: "2024-11-07",
+        actualStart: "2024-11-02",
+        actualEnd: "2024-11-06",
+        duration: "5 days",
+        stage: "DR-1",
+        dependency: "None",
+        risk: "Low",
+        type: "task",
+        progress: 20,
+      },
+    ],
   },
   {
     id: "2",
@@ -66,9 +109,41 @@ const tasks: Task[] = [
     actualStart: "2024-11-03",
     actualEnd: "2024-11-07",
     duration: "6 days",
+    type: "project",
+    stage: "DR-1",
     dependency: "None",
     risk: "Medium",
     progress: 50,
+    subtasks: [
+      {
+        id: "2.1",
+        name: "Subtask 2.1",
+        plannedStart: "2024-11-01",
+        plannedEnd: "2024-11-07",
+        actualStart: "2024-11-02",
+        actualEnd: "2024-11-06",
+        duration: "5 days",
+        stage: "DR-1",
+        dependency: "None",
+        risk: "Low",
+        type: "task",
+        progress: 20,
+      },
+      {
+        id: "2.2",
+        name: "Subtask 2.2",
+        plannedStart: "2024-11-01",
+        plannedEnd: "2024-11-07",
+        actualStart: "2024-11-02",
+        actualEnd: "2024-11-06",
+        duration: "5 days",
+        stage: "DR-1",
+        dependency: "None",
+        risk: "Low",
+        type: "task",
+        progress: 20,
+      },
+    ],
   },
   {
     id: "3",
@@ -77,10 +152,42 @@ const tasks: Task[] = [
     plannedEnd: "2024-11-05",
     actualStart: "2024-11-02",
     actualEnd: "2024-11-04",
+    type: "project",
     duration: "4 days",
     dependency: "Task 1",
     risk: "High",
+    stage: "DR-1",
     progress: 80,
+    subtasks: [
+      {
+        id: "3.1",
+        name: "Subtask 3.1",
+        plannedStart: "2024-11-01",
+        plannedEnd: "2024-11-07",
+        actualStart: "2024-11-02",
+        actualEnd: "2024-11-06",
+        duration: "5 days",
+        stage: "DR-1",
+        dependency: "None",
+        risk: "Low",
+        type: "task",
+        progress: 20,
+      },
+      {
+        id: "3.2",
+        name: "Subtask 3.2",
+        plannedStart: "2024-11-01",
+        plannedEnd: "2024-11-07",
+        actualStart: "2024-11-02",
+        actualEnd: "2024-11-06",
+        duration: "5 days",
+        stage: "DR-1",
+        dependency: "None",
+        risk: "Low",
+        type: "task",
+        progress: 20,
+      },
+    ],
   },
 ];
 
@@ -129,7 +236,10 @@ const TaskListPanel: React.FC<{
   width: string;
   selectedTaskId: string;
   onSelectTask: (id: string) => void;
-}> = ({ selectedTaskId, onSelectTask, width }) => {
+  zoomLevel: string;
+  expandedTaskId: string | null;
+  setExpandedTaskId: React.Dispatch<React.SetStateAction<string | null>>;
+}> = ({ selectedTaskId, onSelectTask, width, zoomLevel, expandedTaskId, setExpandedTaskId }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTask, setNewTask] = useState({
     name: "",
@@ -141,18 +251,23 @@ const TaskListPanel: React.FC<{
     dependency: "",
     risk: "Medium",
     progress: 0,
+    type: "project",
     role: "Coordinator",
     stage: "DR-1",
     actualDuration: 0,
+    subtasks: [],
   });
 
+
+  const toggleSubtasks = (taskId: string) => {
+    setExpandedTaskId(expandedTaskId === taskId ? null : taskId);
+  };
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({
     x: 0,
     y: 0,
   });
   const tooltipRef = useRef<HTMLDivElement | null>(null);
 
-  // Update plannedEnd based on plannedStart and duration
   useEffect(() => {
     if (newTask.plannedStart && newTask.duration) {
       const startDate = new Date(newTask.plannedStart);
@@ -218,6 +333,13 @@ const TaskListPanel: React.FC<{
     setNewTask((prev) => ({
       ...prev,
       risk: e.target.value,
+    }));
+  };
+
+  const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      type: e.target.value,
     }));
   };
 
@@ -294,10 +416,32 @@ const TaskListPanel: React.FC<{
               borderColor={"gray.200"}
               borderRightWidth="1px"
               textAlign="center"
+              minWidth={"80px"}
+            >
+              WBS
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"80px"}
+            >
+              Stage
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
               minWidth={"150px"}
+              height={`${
+                zoomLevel === "weeks"
+                  ? "59px"
+                  : `${zoomLevel === "days" ? "21px" : "83px"}`
+              }`}
             >
               Task Name
             </Th>
+
             <Th
               borderColor={"gray.200"}
               borderRightWidth="1px"
@@ -362,94 +506,268 @@ const TaskListPanel: React.FC<{
             >
               Progress
             </Th>
+
+            <Th
+              borderColor="gray.200"
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth="20px"
+              cursor="pointer"
+              color="blue.500"
+              _hover={{ color: "blue.600", transform: "scale(1.3)" }}
+            >
+              <FontAwesomeIcon
+                onClick={handleAddTaskClick}
+                icon={faPlus}
+                size="lg"
+              />
+            </Th>
           </Tr>
         </Thead>
         <Tbody>
           {tasks.map((task) => (
-            <Tr
-              fontSize="sm"
-              key={task.id}
-              bg={selectedTaskId === task.id ? "blue.100" : "white"}
-              onClick={() => onSelectTask(task.id)}
-              _hover={{ bg: "gray.100", cursor: "pointer" }}
-            >
-              <Td
-                borderColor={"gray.200"}
-                borderRightWidth="1px"
-                textAlign="center"
+            <>
+              <Tr
+                fontSize="sm"
+                key={task.id}
+                bg={selectedTaskId === task.id ? "blue.100" : "white"}
+                onClick={() => onSelectTask(task.id)}
+                _hover={{ bg: "gray.100", cursor: "pointer" }}
               >
-                {task.name}
-              </Td>
-              <Td
-                borderColor={"gray.200"}
-                borderRightWidth="1px"
-                textAlign="center"
-              >
-                {task.plannedStart}
-              </Td>
-              <Td
-                borderColor={"gray.200"}
-                borderRightWidth="1px"
-                textAlign="center"
-              >
-                {task.plannedEnd}
-              </Td>
-              <Td
-                borderColor={"gray.200"}
-                borderRightWidth="1px"
-                textAlign="center"
-              >
-                {task.actualStart}
-              </Td>
-              <Td
-                borderColor={"gray.200"}
-                borderRightWidth="1px"
-                textAlign="center"
-              >
-                {task.actualEnd}
-              </Td>
-              <Td
-                borderColor={"gray.200"}
-                borderRightWidth="1px"
-                textAlign="center"
-              >
-                {task.duration}
-              </Td>
-              <Td
-                borderColor={"gray.200"}
-                borderRightWidth="1px"
-                textAlign="center"
-              >
-                {task.dependency}
-              </Td>
-              <Td
-                borderColor={"gray.200"}
-                borderRightWidth="1px"
-                textAlign="center"
-              >
-                {task.risk}
-              </Td>
-              <Td
-                borderColor={"gray.200"}
-                borderRightWidth="1px"
-                textAlign="center"
-              >
-                <Box width="100%">
-                  <Progress
-                    height="5px"
-                    width={`${task.progress}%`}
-                    backgroundColor={
-                      task.progress < 30
-                        ? "red.400"
-                        : task.progress < 70
-                        ? "yellow.400"
-                        : "green.400"
-                    }
-                    borderRadius="md"
+                <Td
+                  borderColor={"gray.200"}
+                  borderRightWidth="1px"
+                  textAlign="center"
+                  height={"60px"}
+                >
+                  {task.id}
+                </Td>
+
+                <Td
+                  borderColor={"gray.200"}
+                  borderRightWidth="1px"
+                  textAlign="center"
+                  height={"60px"}
+                >
+                  {task.type === "task" ? `${task.stage}` : ""}
+                </Td>
+                <Td
+                  borderColor={"gray.200"}
+                  borderRightWidth="1px"
+                  textAlign="center"
+                  height={"60px"}
+                  onClick={() => toggleSubtasks(task.id)}
+                  cursor="pointer"
+                  display="flex"
+                  alignItems={"center"}
+                >
+                  <FontAwesomeIcon
+                   color="orange"
+                    icon={expandedTaskId === task.id ? faFolderOpen : faFolder}
+                    style={{ marginRight: "8px" }}
                   />
-                </Box>
-              </Td>
-            </Tr>
+                  {task.name}
+                </Td>
+                <Td
+                  borderColor={"gray.200"}
+                  borderRightWidth="1px"
+                  textAlign="center"
+                >
+                  {task.plannedStart}
+                </Td>
+                <Td
+                  borderColor={"gray.200"}
+                  borderRightWidth="1px"
+                  textAlign="center"
+                >
+                  {task.plannedEnd}
+                </Td>
+                <Td
+                  borderColor={"gray.200"}
+                  borderRightWidth="1px"
+                  textAlign="center"
+                >
+                  {task.actualStart}
+                </Td>
+                <Td
+                  borderColor={"gray.200"}
+                  borderRightWidth="1px"
+                  textAlign="center"
+                >
+                  {task.actualEnd}
+                </Td>
+                <Td
+                  borderColor={"gray.200"}
+                  borderRightWidth="1px"
+                  textAlign="center"
+                >
+                  {task.duration}
+                </Td>
+                <Td
+                  borderColor={"gray.200"}
+                  borderRightWidth="1px"
+                  textAlign="center"
+                >
+                  {task.dependency}
+                </Td>
+                <Td
+                  borderColor={"gray.200"}
+                  borderRightWidth="1px"
+                  textAlign="center"
+                >
+                  {task.risk}
+                </Td>
+                <Td
+                  borderColor={"gray.200"}
+                  borderRightWidth="1px"
+                  textAlign="center"
+                >
+                  <Box width="100%">
+                    <Progress
+                      height="5px"
+                      width={`${task.progress}%`}
+                      backgroundColor={
+                        task.progress < 30
+                          ? "red.400"
+                          : task.progress < 70
+                          ? "yellow.400"
+                          : "green.400"
+                      }
+                      borderRadius="md"
+                    />
+                  </Box>
+                </Td>
+                <Td
+                  borderColor="gray.200"
+                  borderRightWidth="1px"
+                  textAlign="center"
+                  minWidth="20px"
+                  cursor="pointer"
+                  color="blue.500"
+                  _hover={{ color: "blue.600", transform: "scale(1.3)" }}
+                >
+                  <FontAwesomeIcon
+                    icon={faPlus}
+                    onClick={handleAddTaskClick}
+                    size="sm"
+                  />
+                </Td>
+              </Tr>
+              {expandedTaskId === task.id &&
+                task.subtasks &&
+                task.subtasks.map((subtask) => (
+                  <Tr key={subtask.id} bg="gray.50"  fontSize="sm">
+                    <Td
+                      borderColor={"gray.200"}
+                      borderRightWidth="1px"
+                      textAlign="center"
+                      height={"60px"}
+                    >
+                      {subtask.id}
+                    </Td>
+
+                    <Td
+                      borderColor={"gray.200"}
+                      borderRightWidth="1px"
+                      textAlign="center"
+                      height={"60px"}
+                    >
+                      {subtask.type === "task" ? `${subtask.stage}` : ""}
+                    </Td>
+                    <Td
+                      borderColor={"gray.200"}
+                      borderRightWidth="1px"
+                      textAlign="center"
+                      height={"60px"}
+                      display={"flex"}
+                      alignItems={"center"}
+                      marginLeft={"10px"}
+
+                    >
+                      <FontAwesomeIcon color="blue" icon={faFileAlt}    style={{ marginRight: "8px" }}  />
+                      {subtask.name}
+                    </Td>
+                    <Td
+                      borderColor={"gray.200"}
+                      borderRightWidth="1px"
+                      textAlign="center"
+                    >
+                      {subtask.plannedStart}
+                    </Td>
+                    <Td
+                      borderColor={"gray.200"}
+                      borderRightWidth="1px"
+                      textAlign="center"
+                    >
+                      {subtask.plannedEnd}
+                    </Td>
+                    <Td
+                      borderColor={"gray.200"}
+                      borderRightWidth="1px"
+                      textAlign="center"
+                    >
+                      {subtask.actualStart}
+                    </Td>
+                    <Td
+                      borderColor={"gray.200"}
+                      borderRightWidth="1px"
+                      textAlign="center"
+                    >
+                      {subtask.actualEnd}
+                    </Td>
+                    <Td
+                      borderColor={"gray.200"}
+                      borderRightWidth="1px"
+                      textAlign="center"
+                    >
+                      {subtask.duration}
+                    </Td>
+                    <Td
+                      borderColor={"gray.200"}
+                      borderRightWidth="1px"
+                      textAlign="center"
+                    >
+                      {subtask.dependency}
+                    </Td>
+                    <Td
+                      borderColor={"gray.200"}
+                      borderRightWidth="1px"
+                      textAlign="center"
+                    >
+                      {subtask.risk}
+                    </Td>
+                    <Td
+                      borderColor={"gray.200"}
+                      borderRightWidth="1px"
+                      textAlign="center"
+                    >
+                      <Box width="100%">
+                        <Progress
+                          height="5px"
+                          width={`${subtask.progress}%`}
+                          backgroundColor={
+                            subtask.progress < 30
+                              ? "red.400"
+                              : subtask.progress < 70
+                              ? "yellow.400"
+                              : "green.400"
+                          }
+                          borderRadius="md"
+                        />
+                      </Box>
+                    </Td>
+                    <Td
+                      borderColor="gray.200"
+                      borderRightWidth="1px"
+                      textAlign="center"
+                      minWidth="20px"
+                      cursor="pointer"
+                      color="blue.500"
+                      _hover={{ color: "blue.600", transform: "scale(1.3)" }}
+                    ></Td>
+                  </Tr>
+                ))}
+            </>
           ))}
         </Tbody>
       </Table>
@@ -482,6 +800,26 @@ const TaskListPanel: React.FC<{
                 _hover={{ borderColor: "teal.500" }}
                 _focus={{ borderColor: "teal.500" }}
               />
+            </FormControl>
+
+            <FormControl mt={3} id="risk" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Type
+              </FormLabel>
+              <Select
+                value={newTask.type}
+                onChange={handleTypeChange}
+                name="risk"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="task">task</option>
+                <option value="project">project</option>
+                <option value="milestone">milestone</option>
+              </Select>
             </FormControl>
 
             <FormControl mt={5} id="planned" isRequired>
@@ -535,7 +873,6 @@ const TaskListPanel: React.FC<{
                   </Flex>
                 </Box>
 
-                {/* Planned End */}
                 <Box flex="1" ml={2}>
                   <FormLabel textAlign="center" fontSize="xs">
                     End
@@ -654,9 +991,9 @@ const TaskListPanel: React.FC<{
                 _hover={{ borderColor: "teal.500" }}
                 _focus={{ borderColor: "teal.500" }}
               >
-                <option value="Low">Coordinator</option>
-                <option value="Medium">Manager</option>
-                <option value="High">User</option>
+                <option value="coordinator">Coordinator</option>
+                <option value="manager">Manager</option>
+                <option value="user">User</option>
               </Select>
             </FormControl>
 
@@ -674,9 +1011,9 @@ const TaskListPanel: React.FC<{
                 _hover={{ borderColor: "teal.500" }}
                 _focus={{ borderColor: "teal.500" }}
               >
-                <option value="Low">DR-1</option>
-                <option value="Medium">DR-2</option>
-                <option value="High">DR-3</option>
+                <option value="DR-1">DR-1</option>
+                <option value="DR-2">DR-2</option>
+                <option value="DR`">DR-3</option>
               </Select>
             </FormControl>
 
@@ -767,8 +1104,9 @@ const TimelinePanel: React.FC<{
   width: string;
   selectedTaskId: string;
   zoomLevel: string;
+  expandedTaskId: string | null;
   onZoomChange: (level: string) => void;
-}> = ({ zoomLevel, onZoomChange, width, selectedTaskId }) => {
+}> = ({ zoomLevel, onZoomChange, width, selectedTaskId, expandedTaskId }) => {
   const startDates = tasks.map((task) => new Date(task.plannedStart).getTime());
   const endDates = tasks.map((task) => new Date(task.plannedEnd).getTime());
 
@@ -806,6 +1144,201 @@ const TimelinePanel: React.FC<{
     return date.toLocaleDateString("en-US", options);
   };
 
+  const renderDateRow = () => {
+    const startYear = new Date(minDate).getFullYear();
+    const endYear = new Date(maxDate).getFullYear();
+
+    if (zoomLevel === "days") {
+      const minDateObj = new Date(minDate);
+      const maxDateObj = new Date(maxDate);
+
+      if (isNaN(minDateObj.getTime()) || isNaN(maxDateObj.getTime())) {
+        console.error("Invalid date values");
+        return null;
+      }
+
+      const totalDays = Math.ceil(
+        (maxDateObj.getTime() - minDateObj.getTime()) / (1000 * 3600 * 24)
+      );
+      return (
+        <>
+          <Tr key="dates">
+            {dateRange.map((date, idx) => (
+              <Th
+                key={idx}
+                textAlign="center"
+                borderColor="gray.200"
+                borderRightWidth="1px"
+                minWidth={"120px"}
+              >
+                {getDate(date)}
+              </Th>
+            ))}
+          </Tr>
+        </>
+      );
+    } else if (zoomLevel === "months") {
+      return (
+        <>
+          <Tr key="year">
+            {Array.from(
+              { length: endYear - startYear + 1 },
+              (_, i) => startYear + i
+            ).map((year) => (
+              <Th
+                key={year}
+                textAlign="center"
+                colSpan={12}
+                borderColor="gray.200"
+                borderRightWidth="1px"
+              >
+                {year}
+              </Th>
+            ))}
+          </Tr>
+
+          <Tr key="months">
+            {Array.from(
+              { length: endYear - startYear + 1 },
+              (_, i) => startYear + i
+            ).map((year) =>
+              Array.from({ length: 12 }, (_, monthIndex) => (
+                <Th
+                  key={`${year}-${monthIndex}`}
+                  textAlign="center"
+                  borderColor="gray.200"
+                  borderRightWidth="1px"
+                >
+                  {new Date(year, monthIndex).toLocaleString("default", {
+                    month: "short",
+                  })}
+                </Th>
+              ))
+            )}
+          </Tr>
+        </>
+      );
+    } else if (zoomLevel === "quarters") {
+      return (
+        <>
+          <Tr key="year">
+            {Array.from(
+              { length: endYear - startYear + 1 },
+              (_, i) => startYear + i
+            ).map((year) => (
+              <Th
+                key={year}
+                textAlign="center"
+                colSpan={4}
+                borderColor="gray.200"
+                borderRightWidth="1px"
+              >
+                {year}
+              </Th>
+            ))}
+          </Tr>
+
+          <Tr key="quarters">
+            {Array.from(
+              { length: endYear - startYear + 1 },
+              (_, i) => startYear + i
+            ).map((year) =>
+              ["(Jan-Mar)", "(Apr-Jun)", "(Jul-Sep)", "(Oct-Dec)"].map(
+                (quarter, idx) => (
+                  <Th
+                    key={`${year}-${quarter}`}
+                    textAlign="center"
+                    borderColor="gray.200"
+                    borderRightWidth="1px"
+                    minWidth="120px"
+                  >
+                    {quarter}
+                  </Th>
+                )
+              )
+            )}
+          </Tr>
+        </>
+      );
+    } else if (zoomLevel === "years") {
+      return (
+        <>
+          <Tr key="year">
+            <Th
+              textAlign="center"
+              colSpan={endYear - startYear + 1}
+              borderColor="gray.200"
+              borderRightWidth="1px"
+            >
+              {`${startYear} - ${endYear}`}
+            </Th>
+          </Tr>
+
+          <Tr key="years">
+            {Array.from(
+              { length: endYear - startYear + 1 },
+              (_, i) => startYear + i
+            ).map((year) => (
+              <Th
+                key={year}
+                textAlign="center"
+                borderColor="gray.200"
+                borderRightWidth="1px"
+              >
+                {year}
+              </Th>
+            ))}
+          </Tr>
+        </>
+      );
+    } else if (zoomLevel === "weeks") {
+      const getWeeksInYear = (year: number) => {
+        const start = new Date(year, 0, 1);
+        const end = new Date(year, 11, 31);
+        const weeks = Math.ceil(
+          (end.getTime() - start.getTime()) / (1000 * 3600 * 24 * 7)
+        );
+        return weeks;
+      };
+
+      const weeks = [];
+      let currentWeekStart = new Date(minDate);
+      while (currentWeekStart <= new Date(maxDate)) {
+        let currentWeekEnd = new Date(currentWeekStart);
+        currentWeekEnd.setDate(currentWeekStart.getDate() + 6);
+        weeks.push({ start: currentWeekStart, end: currentWeekEnd });
+        currentWeekStart = new Date(currentWeekEnd);
+      }
+
+      return (
+        <>
+          <Tr key="weeks">
+            {weeks.map((week, idx) => (
+              <Th
+                key={idx}
+                borderColor="gray.200"
+                borderRightWidth="1px"
+                minWidth={"120px"}
+              >
+                {getDate(week.start.toISOString())} -{" "}
+                {getDate(week.end.toISOString())}
+              </Th>
+            ))}
+          </Tr>
+        </>
+      );
+    }
+  };
+
+  const getDaysInYear = (year: number) => {
+    return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 366 : 365;
+  };
+
+  // const getDate = (date: string | number | Date) => {
+  //   const d = new Date(date);
+  //   return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+  // };
+
   return (
     <Box width={width} pe={2} py={2} overflowY="auto" height="100vh">
       <Flex align="center" mb={2}>
@@ -833,107 +1366,149 @@ const TimelinePanel: React.FC<{
         variant="simple"
         colorScheme="gray"
       >
-        <Thead>
-          <Tr>
-            {dateRange.map((date) => (
-              <Th
-                borderColor={"gray.200"}
-                borderRightWidth="1px"
-                minWidth={"100px"}
-                key={date}
-                textAlign="center"
-              >
-                {new Date(date).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "2-digit",
-                })}
-              </Th>
-            ))}
-          </Tr>
-        </Thead>
-        <Tbody>
+        <Thead>{renderDateRow()}</Thead>
+  <Tbody>
           {tasks.map((task) => {
             const plannedStartIdx = dateRange.indexOf(task.plannedStart);
             const plannedEndIdx = dateRange.indexOf(task.plannedEnd);
             const actualStartIdx = dateRange.indexOf(task.actualStart);
             const actualEndIdx = dateRange.indexOf(task.actualEnd);
+            const plannedBarWidth = `${
+              (plannedEndIdx - plannedStartIdx + 1) * 100
+            }%`;
+            const actualBarWidth = `${
+              (actualEndIdx - actualStartIdx + 1) * 100
+            }%`;
 
             return (
-              <Tr
-                key={task.id}
-                bg={selectedTaskId === task.id ? "blue.100" : "white"}
-              >
-                {dateRange.map((date, idx) => (
-                  <Td
-                    borderColor={"gray.200"}
-                    borderRightWidth="1px"
-                    height={"52px"}
-                    key={date}
-                    position="relative"
-                  >
-                    {idx === plannedStartIdx && (
-                      <Tooltip
-                        label={
-                          <Box p={2} bg="white" borderRadius="md" shadow="md">
-                            <Text fontWeight="bold" mb={1}>
-                              {task.name}
-                            </Text>
-                            <Text>
-                              <strong>Duration:</strong> {task.duration} days
-                            </Text>
-                            <Text>
-                              <strong>Stage:</strong> {task.stage}
-                            </Text>
-                            <Text>
-                              <strong>Planned Start:</strong>{" "}
-                              {task.plannedStart}
-                            </Text>
-                            <Text>
-                              <strong>Planned End:</strong> {task.plannedEnd}
-                            </Text>
-                            <Text>
-                              <strong>Status:</strong>{" "}
-                              {task.progress === 100
-                                ? "Completed"
-                                : "In Progress"}
-                            </Text>
-                            <Text>
-                              <strong>Progress:</strong> {task.progress}%
-                            </Text>
-                          </Box>
-                        }
-                        aria-label="Task Details"
-                        placement="top"
-                        hasArrow
-                        openDelay={0}
-                        closeDelay={0}
-                      >
+              <React.Fragment key={task.id}>
+                <Tr
+                  bg={selectedTaskId === task.id ? "blue.100" : "white"}
+                >
+                  {dateRange.map((date, idx) => (
+                    <Td
+                      borderColor={"gray.200"}
+                      borderRightWidth="1px"
+                      height={"60px"}
+                      key={date}
+                      position="relative"
+                    >
+                      {idx === plannedStartIdx && (
+                        <Tooltip
+                          bg={"white"}
+                          position={"absolute"}
+                          label={
+                            <Box p={2} bg="white">
+                              <Text fontWeight="bold" mb={1}>
+                                {task.name}
+                              </Text>
+                
+                            </Box>
+                          }
+                          aria-label="Task Details"
+                          placement="top"
+                          hasArrow
+                          openDelay={0}
+                          closeDelay={0}
+                        >
+                          <Progress
+                            position="absolute"
+                            top="20%"
+                            h="12px"
+                            cursor={"pointer"}
+                            left={1}
+                            w={plannedBarWidth}
+                            bg="blue.400"
+                            borderRadius="md"
+                          />
+                        </Tooltip>
+                      )}
+                      {idx === actualStartIdx && (
                         <Progress
                           position="absolute"
-                          top="20%"
+                          top="50%"
                           h="12px"
-                          cursor={"pointer"}
                           left={1}
-                          w={`${plannedEndIdx - plannedStartIdx + 1}00%`}
-                          bg="blue.400"
+                          cursor={"pointer"}
+                          w={actualBarWidth}
+                          bg="green.300"
                           borderRadius="md"
                         />
-                      </Tooltip>
-                    )}
-                    {idx === actualStartIdx && (
-                      <Progress
-                        position="absolute"
-                        top="50%"
-                        h="12px"
-                        left={1}
-                        w={`${actualEndIdx - actualStartIdx + 1}00%`}
-                        bg="green.300"
-                        borderRadius="md"
-                      />
-                    )}
-                  </Td>
+                      )}
+                    </Td>
+                  ))}
+                </Tr>
+
+                {expandedTaskId === task.id && task.subtasks?.map((subtask) => (
+                  <Tr key={subtask.id} bg="gray.50">
+                    {dateRange.map((date, idx) => {
+                           const plannedsubStartIdx = dateRange.indexOf(subtask.plannedStart);
+                           const plannedsubEndIdx = dateRange.indexOf(subtask.plannedEnd);
+                           const actualsubStartIdx = dateRange.indexOf(subtask.actualStart);
+                           const actualsubEndIdx = dateRange.indexOf(subtask.actualEnd);
+                           const plannedsubBarWidth = `${
+                             (plannedsubEndIdx - plannedsubStartIdx + 1) * 100
+                           }%`;
+                           const actualsubBarWidth = `${
+                             (actualsubEndIdx - actualsubStartIdx + 1) * 100
+                           }%`;
+
+                      return (
+                        <Td
+                      borderColor={"gray.200"}
+                      borderRightWidth="1px"
+                      height={"60px"}
+                      key={date}
+                      position="relative"
+                    >
+                      {idx === plannedsubStartIdx && (
+                        <Tooltip
+                          bg={"white"}
+                          position={"absolute"}
+                          label={
+                            <Box p={2} bg="white">
+                              <Text fontWeight="bold" mb={1}>
+                                {subtask.name}
+                              </Text>
+                
+                            </Box>
+                          }
+                          aria-label="Task Details"
+                          placement="top"
+                          hasArrow
+                          openDelay={0}
+                          closeDelay={0}
+                        >
+                          <Progress
+                            position="absolute"
+                            top="20%"
+                            h="12px"
+                            cursor={"pointer"}
+                            left={1}
+                            w={plannedsubBarWidth}
+                            bg="purple.400"
+                            borderRadius="md"
+                          />
+                        </Tooltip>
+                      )}
+                      {idx === actualsubStartIdx && (
+                        <Progress
+                          position="absolute"
+                          top="50%"
+                          h="12px"
+                          left={1}
+                          cursor={"pointer"}
+                          w={actualsubBarWidth}
+                          bg="yellow.400"
+                          borderRadius="md"
+                        />
+                      )}
+                    </Td>
+                      );
+                    })}
+                  </Tr>
                 ))}
-              </Tr>
+              </React.Fragment>
             );
           })}
         </Tbody>
@@ -947,6 +1522,7 @@ const App: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string>("");
   const [zoomLevel, setZoomLevel] = useState<string>("days");
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
 
   const handleMouseUp = () => {
     setIsDragging(false);
@@ -983,6 +1559,9 @@ const App: React.FC = () => {
         width={panelWidth}
         selectedTaskId={selectedTaskId}
         onSelectTask={setSelectedTaskId}
+        zoomLevel={zoomLevel}
+        expandedTaskId={expandedTaskId}
+        setExpandedTaskId={setExpandedTaskId}
       />
       <Box
         width="5px"
@@ -995,9 +1574,14 @@ const App: React.FC = () => {
         selectedTaskId={selectedTaskId}
         zoomLevel={zoomLevel}
         onZoomChange={setZoomLevel}
+        expandedTaskId={expandedTaskId}
       />
     </Flex>
   );
 };
 
 export default App;
+function setExpandedTaskId(arg0: string | null) {
+  throw new Error("Function not implemented.");
+}
+
