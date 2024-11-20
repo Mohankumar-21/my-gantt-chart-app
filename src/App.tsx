@@ -40,6 +40,17 @@ import {
   SliderThumb,
   Tooltip,
 } from "@chakra-ui/react";
+import { db } from "./firebase/firebaseconfig";
+import {
+  collection,
+  addDoc,
+  getDocs,
+  doc,
+  setDoc,
+  getDoc,
+  deleteDoc,
+} from "@firebase/firestore";
+import { useToast } from "@chakra-ui/react";
 
 interface Task {
   id: string;
@@ -48,254 +59,23 @@ interface Task {
   plannedEnd: string;
   actualStart: string;
   actualEnd: string;
-  duration: string;
-  actualDuration?: string;
+  duration: number;
+  actualDuration?: number;
   dependency: string;
   risk: string;
   inlineProgress?: number;
   progress: number;
   role?: string;
+  status: string;
   type: string;
   stage?: string;
   subtasks?: Task[];
+  dependencies?: { taskId: string; type: "FS" | "SS" | "FF" | "SF" }[];
 }
 
-const tasks: Task[] = [
-  {
-    id: "1",
-    name: "Task 1",
-    plannedStart: "2024-11-01",
-    plannedEnd: "2027-11-10",
-    actualStart: "2024-11-02",
-    actualEnd: "2024-11-08",
-    duration: "5 days",
-    stage: "DR-1",
-    dependency: "None",
-    risk: "Low",
-    inlineProgress: 0,
-    type: "project",
-    progress: 20,
-    subtasks: [
-      {
-        id: "1.1",
-        name: "Subtask 1.1",
-        plannedStart: "2024-11-01",
-        plannedEnd: "2024-11-07",
-        actualStart: "2024-11-02",
-        actualEnd: "2024-11-06",
-        duration: "5 days",
-        stage: "DR-1",
-        dependency: "None",
-        risk: "Low",
-        type: "task",
-        progress: 20,
-      },
-      {
-        id: "1.2",
-        name: "Subtask 1.2",
-        plannedStart: "2024-11-01",
-        plannedEnd: "2024-11-07",
-        actualStart: "2024-11-02",
-        actualEnd: "2024-11-06",
-        duration: "5 days",
-        stage: "DR-1",
-        dependency: "None",
-        risk: "Low",
-        type: "task",
-        progress: 20,
-      },
-    ],
-  },
-  {
-    id: "2",
-    name: "Task 2",
-    plannedStart: "2024-11-02",
-    plannedEnd: "2024-11-08",
-    actualStart: "2024-11-03",
-    actualEnd: "2024-11-07",
-    duration: "6 days",
-    type: "project",
-    stage: "DR-1",
-    inlineProgress: 20,
-    dependency: "None",
-    risk: "Medium",
-    progress: 50,
-    subtasks: [
-      {
-        id: "2.1",
-        name: "Subtask 2.1",
-        plannedStart: "2024-11-01",
-        plannedEnd: "2024-11-07",
-        actualStart: "2024-11-02",
-        actualEnd: "2024-11-06",
-        duration: "5 days",
-        stage: "DR-1",
-        dependency: "None",
-        risk: "Low",
-        type: "task",
-        progress: 20,
-      },
-      {
-        id: "2.2",
-        name: "Subtask 2.2",
-        plannedStart: "2024-11-01",
-        plannedEnd: "2024-11-05",
-        actualStart: "2024-11-02",
-        actualEnd: "2024-11-03",
-        duration: "5 days",
-        stage: "DR-1",
-        dependency: "None",
-        risk: "Low",
-        type: "task",
-        progress: 20,
-      },
-      {
-        id: "2.3",
-        name: "Subtask 2.3",
-        plannedStart: "2024-11-01",
-        plannedEnd: "2024-11-07",
-        actualStart: "2024-11-02",
-        actualEnd: "2024-11-06",
-        duration: "5 days",
-        stage: "DR-1",
-        dependency: "None",
-        risk: "Low",
-        type: "task",
-        progress: 20,
-      },
-      {
-        id: "2.4",
-        name: "Subtask 2.4",
-        plannedStart: "2024-11-01",
-        plannedEnd: "2024-11-07",
-        actualStart: "2024-11-02",
-        actualEnd: "2024-11-06",
-        duration: "5 days",
-        stage: "DR-1",
-        dependency: "None",
-        risk: "Low",
-        type: "task",
-        progress: 20,
-      },
-    ],
-  },
-  {
-    id: "3",
-    name: "Task 3",
-    plannedStart: "2024-11-01",
-    plannedEnd: "2024-11-05",
-    actualStart: "2024-11-02",
-    actualEnd: "2024-11-04",
-    type: "project",
-    duration: "4 days",
-    dependency: "Task 1",
-    risk: "High",
-    inlineProgress: 10,
-    stage: "DR-1",
-    progress: 80,
-    subtasks: [
-      {
-        id: "3.1",
-        name: "Subtask 3.1",
-        plannedStart: "2024-11-01",
-        plannedEnd: "2024-11-07",
-        actualStart: "2024-11-02",
-        actualEnd: "2024-11-06",
-        duration: "5 days",
-        stage: "DR-1",
-        dependency: "None",
-        risk: "Low",
-        type: "task",
-        progress: 20,
-      },
-      {
-        id: "3.2",
-        name: "Subtask 3.2",
-        plannedStart: "2024-11-01",
-        plannedEnd: "2024-11-07",
-        actualStart: "2024-11-02",
-        actualEnd: "2024-11-06",
-        duration: "5 days",
-        stage: "DR-1",
-        dependency: "None",
-        risk: "Low",
-        type: "task",
-        progress: 20,
-      },
-    ],
-  },
-];
-
-const generateDateRange = (
-  startDate: string,
-  endDate: string,
-  zoomLevel: string
-): string[] => {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const dates: string[] = [];
-
-  // Create a clone of the start date
-  let currentDate = new Date(start);
-
-  switch (zoomLevel) {
-    case "days":
-      while (currentDate <= end) {
-        dates.push(currentDate.toISOString().split("T")[0]);
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-      break;
-
-    case "weeks":
-      while (currentDate <= end) {
-        dates.push(currentDate.toISOString().split("T")[0]);
-        currentDate.setDate(currentDate.getDate() + 7);
-      }
-      break;
-
-    case "months":
-      while (currentDate <= end) {
-        dates.push(currentDate.toISOString().split("T")[0]);
-        const day = currentDate.getDate();
-        currentDate.setMonth(currentDate.getMonth() + 1);
-
-        // Ensure the day doesn't overflow to the next month
-        if (currentDate.getDate() < day) {
-          currentDate.setDate(0); // Adjust to the last valid day of the month
-        }
-      }
-      break;
-
-    case "quarters":
-      while (currentDate <= end) {
-        dates.push(currentDate.toISOString().split("T")[0]);
-        const day = currentDate.getDate();
-        currentDate.setMonth(currentDate.getMonth() + 3);
-
-        // Ensure the day doesn't overflow to the next quarter
-        if (currentDate.getDate() < day) {
-          currentDate.setDate(0);
-        }
-      }
-      break;
-
-    case "years":
-      while (currentDate <= end) {
-        dates.push(currentDate.toISOString().split("T")[0]);
-        currentDate.setFullYear(currentDate.getFullYear() + 1);
-      }
-      break;
-
-    default:
-      console.error("Unsupported zoom level:", zoomLevel);
-      break;
-  }
-
-  return dates;
-};
-
-
 const TaskListPanel: React.FC<{
+  tasks: Task[];
+  setTask: React.Dispatch<React.SetStateAction<Task[]>>;
   width: string;
   selectedTaskId: string;
   onSelectTask: (id: string) => void;
@@ -309,9 +89,14 @@ const TaskListPanel: React.FC<{
   zoomLevel,
   expandedTaskId,
   setExpandedTaskId,
+  tasks,
+  setTask,
 }) => {
+  const toast = useToast();
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newTask, setNewTask] = useState({
+  const [newTask, setNewTask] = useState<Task>({
+    id: "",
     name: "",
     plannedStart: "",
     plannedEnd: "",
@@ -324,9 +109,28 @@ const TaskListPanel: React.FC<{
     type: "project",
     role: "Coordinator",
     stage: "DR-1",
+    status: "Not-started",
     actualDuration: 0,
     subtasks: [],
   });
+
+  const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
+    if (parentTaskId) {
+      // If it's a subtask
+      const parentTask = tasks.find((t) => t.id === parentTaskId);
+      const subtaskToEdit = parentTask?.subtasks?.find((sub) => sub.id === task.id);
+      if (subtaskToEdit) {
+        setNewTask({ ...subtaskToEdit });
+        setEditingTaskId(task.id); 
+      }
+    } else {
+      // If it's a parent task
+      setNewTask({ ...task });
+      setEditingTaskId(task.id);
+    }
+    setIsModalOpen(true);
+  };
+  
 
   const toggleSubtasks = (taskId: string) => {
     setExpandedTaskId(expandedTaskId === taskId ? null : taskId);
@@ -362,13 +166,62 @@ const TaskListPanel: React.FC<{
       }));
     }
   }, [newTask.actualStart, newTask.actualDuration]);
+  const handleAddTaskClick = (selectedTaskId?: string) => {
+    if (!selectedTaskId) {
+      // Add a new parent task
+      const newParentId = (tasks.length + 1).toString();
+      setNewTask({
+        id: newParentId,
+        name: "",
+        plannedStart: "",
+        plannedEnd: "",
+        actualStart: "",
+        actualEnd: "",
+        duration: 0,
+        dependency: "",
+        risk: "Medium",
+        progress: 0,
+        type: "project",
+        role: "Coordinator",
+        stage: "DR-1",
+        status: "Not-started",
+        actualDuration: 0,
+        subtasks: [],
+      });
+    } else {
+      // Add a subtask to the selected task
+      const selectedTask = tasks.find((task) => task.id === selectedTaskId);
+      if (selectedTask) {
+        const newSubtaskId = `${selectedTask.id}.${
+          (selectedTask.subtasks?.length || 0) + 1
+        }`;
+        setNewTask({
+          id: newSubtaskId,
+          name: "",
+          plannedStart: "",
+          plannedEnd: "",
+          actualStart: "",
+          actualEnd: "",
+          duration: 0,
+          dependency: "",
+          risk: "Medium",
+          progress: 0,
+          type: "task",
+          role: "Coordinator",
+          stage: "DR-1",
+          actualDuration: 0,
+          status: "Not-started",
+          subtasks: [],
+        });
+      }
+    }
 
-  const handleAddTaskClick = () => {
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
+    setEditingTaskId(null);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -390,7 +243,7 @@ const TaskListPanel: React.FC<{
 
   const handleActualDurationChange = (change: number) => {
     setNewTask((prev) => {
-      const newDuration = prev.actualDuration + change;
+      const newDuration = (prev.actualDuration || 0) + change;
       return {
         ...prev,
         actualDuration: Math.max(newDuration, 0),
@@ -426,6 +279,13 @@ const TaskListPanel: React.FC<{
     }));
   };
 
+  const handleStausChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      status: e.target.value,
+    }));
+  };
+
   const handleProgressChange = (value: number) => {
     setNewTask((prev) => ({
       ...prev,
@@ -447,6 +307,303 @@ const TaskListPanel: React.FC<{
     }));
   };
 
+  useEffect(() => {
+    const fetchTasks = async () => {
+      try {
+        const tasksCollection = collection(db, "tasks");
+        const snapshot = await getDocs(tasksCollection);
+        const tasksData = snapshot.docs
+          .map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }))
+          .sort((a, b) => parseInt(a.id) - parseInt(b.id)) as Task[];
+        setTask(tasksData);
+      } catch (error) {
+        console.error("Error fetching tasks:", error);
+        toast({
+          title: "Error",
+          description: "Failed to fetch tasks. Please try again.",
+          status: "error",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      }
+    };
+
+    fetchTasks();
+  }, []);
+
+  const handleSaveTask = async () => {
+    if (!newTask.name || !newTask.plannedStart || !newTask.plannedEnd) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields.",
+        status: "warning",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    try {
+      const tasksCollection = collection(db, "tasks");
+
+      if (newTask.id.includes(".")) {
+        // Handle Subtask
+        const [parentId] = newTask.id.split(".");
+        const parentTaskRef = doc(tasksCollection, parentId);
+
+        // Fetch the parent task
+        const parentTaskSnap = await getDoc(parentTaskRef);
+        if (!parentTaskSnap.exists()) {
+          throw new Error("Parent task not found.");
+        }
+
+        const parentTask = parentTaskSnap.data();
+
+        // Update the subtasks array
+        const updatedSubtasks = [
+          ...(parentTask.subtasks || []),
+          { ...newTask },
+        ];
+
+        await setDoc(parentTaskRef, {
+          ...parentTask,
+          subtasks: updatedSubtasks,
+        });
+
+        // Update local state
+        setTask((prevTasks) =>
+          prevTasks.map((task) =>
+            task.id === parentId ? { ...task, subtasks: updatedSubtasks } : task
+          )
+        );
+
+        toast({
+          title: "Subtask Saved",
+          description: `Subtask "${newTask.name}" added to Task ${parentId}.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      } else {
+        // Handle Parent Task
+        const snapshot = await getDocs(tasksCollection);
+
+        const existingIds = snapshot.docs.map(
+          (doc) => parseInt(doc.id, 10) || 0
+        );
+        const nextId = (Math.max(0, ...existingIds) + 1).toString();
+
+        const taskWithId = { ...newTask, id: nextId };
+
+        const docRef = doc(tasksCollection, nextId);
+        await setDoc(docRef, taskWithId);
+
+        // Update local state
+        setTask((prevTasks) => [...prevTasks, taskWithId]);
+
+        toast({
+          title: "Task Saved",
+          description: `Your task "${newTask.name}" has been successfully saved.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      }
+
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Error saving task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save task. Please try again.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    }
+  };
+
+  const handleUpdateTask = async () => {
+    if (!newTask.name || !newTask.plannedStart || !newTask.plannedEnd) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields.",
+        status: "warning",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+  
+    if (!editingTaskId) {
+      toast({
+        title: "Error",
+        description: "No task selected for update.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+  
+    try {
+      const isSubtask = editingTaskId.includes(".");
+      const taskRef = isSubtask
+        ? doc(db, "tasks", editingTaskId.split(".")[0]) // Reference the parent task
+        : doc(db, "tasks", editingTaskId);
+  
+      const updatedTasks = tasks.map((task) => {
+        if (task.id === editingTaskId.split(".")[0]) {
+          // Update parent task
+          if (isSubtask && task.subtasks) {
+            const updatedSubtasks = task.subtasks.map((subtask) =>
+              subtask.id === editingTaskId ? { ...subtask, ...newTask } : subtask
+            );
+            return { ...task, subtasks: updatedSubtasks };
+          }
+          return task.id === editingTaskId ? { ...task, ...newTask } : task;
+        }
+        return task;
+      });
+  
+      setTask(updatedTasks);
+  
+      // Update Firestore
+      const parentTask = updatedTasks.find(
+        (task) => task.id === editingTaskId.split(".")[0]
+      );
+      if (parentTask) {
+        await setDoc(taskRef, parentTask, { merge: true });
+      }
+  
+      toast({
+        title: "Task Updated",
+        description: `Task "${newTask.name}" has been successfully updated.`,
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+  
+      setEditingTaskId(null);
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Error updating task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update task. Please try again.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    }
+  };
+  
+
+  console.log("Tasks:", tasks);
+
+  const handleDeleteTask = async () => {
+    if (!editingTaskId) {
+      toast({
+        title: "Error",
+        description: "No task selected for deletion.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    try {
+      const tasksCollection = collection(db, "tasks");
+
+      if (editingTaskId.includes(".")) {
+        // Handle Subtask Deletion
+        const [parentId] = editingTaskId.split(".");
+        const parentTaskRef = doc(tasksCollection, parentId);
+
+        // Fetch parent task
+        const parentTaskSnap = await getDoc(parentTaskRef);
+        if (!parentTaskSnap.exists()) {
+          throw new Error("Parent task not found.");
+        }
+
+        const parentTask = parentTaskSnap.data();
+        const updatedSubtasks = parentTask.subtasks.filter(
+          (subtask: Task) => subtask.id !== editingTaskId
+        );
+
+    
+        await setDoc(parentTaskRef, {
+          ...parentTask,
+          subtasks: updatedSubtasks,
+        });
+
+    
+        setTask((prevTasks) =>
+          prevTasks.map((task) =>
+            task.id === parentId ? { ...task, subtasks: updatedSubtasks } : task
+          )
+        );
+
+        toast({
+          title: "Subtask Deleted",
+          description: `Subtask "${editingTaskId}" has been successfully deleted.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      } else {
+        // Handle Parent Task Deletion
+        const taskRef = doc(tasksCollection, editingTaskId);
+
+        // Delete from Firestore
+        await deleteDoc(taskRef);
+
+        // Update local state
+        setTask((prevTasks) =>
+          prevTasks.filter((task) => task.id !== editingTaskId)
+        );
+
+        toast({
+          title: "Task Deleted",
+          description: `Task "${editingTaskId}" has been successfully deleted.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      }
+
+      // Close modal and reset state
+      setEditingTaskId(null);
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Error deleting task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete task. Please try again.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    }
+  };
+
   return (
     <Box width={width} p={2} overflowY="auto" height="100vh">
       <Flex gap={5}>
@@ -454,7 +611,7 @@ const TaskListPanel: React.FC<{
           Task Details
         </Text>
         <Button
-          onClick={handleAddTaskClick}
+          onClick={() => handleAddTaskClick()}
           bg="teal.500"
           color="white"
           size="sm"
@@ -504,7 +661,7 @@ const TaskListPanel: React.FC<{
               minWidth={"150px"}
               height={`${
                 zoomLevel === "weeks"
-                  ? "59px"
+                  ? "39px"
                   : `${zoomLevel === "days" ? "21px" : "83px"}`
               }`}
             >
@@ -586,7 +743,7 @@ const TaskListPanel: React.FC<{
               _hover={{ color: "blue.600", transform: "scale(1.3)" }}
             >
               <FontAwesomeIcon
-                onClick={handleAddTaskClick}
+                onClick={() => handleAddTaskClick()}
                 icon={faPlus}
                 size="lg"
               />
@@ -595,12 +752,13 @@ const TaskListPanel: React.FC<{
         </Thead>
         <Tbody>
           {tasks.map((task) => (
-            <>
+            <React.Fragment key={`task-${task.id}`}>
               <Tr
                 fontSize="sm"
                 key={task.id}
                 bg={selectedTaskId === task.id ? "blue.100" : "white"}
                 onClick={() => onSelectTask(task.id)}
+                onDoubleClick={() => handleRowDoubleClick(task)}
                 _hover={{ bg: "gray.100", cursor: "pointer" }}
               >
                 <Td
@@ -717,7 +875,7 @@ const TaskListPanel: React.FC<{
                 >
                   <FontAwesomeIcon
                     icon={faPlus}
-                    onClick={handleAddTaskClick}
+                    onClick={() => handleAddTaskClick(task.id)}
                     size="sm"
                   />
                 </Td>
@@ -730,6 +888,7 @@ const TaskListPanel: React.FC<{
                     fontSize="sm"
                     bg={selectedTaskId === task.id ? "white" : "white"}
                     _hover={{ bg: "gray.100", cursor: "pointer" }}
+                    onDoubleClick={() => handleRowDoubleClick(subtask, task.id)}
                   >
                     <Td
                       borderColor={"gray.200"}
@@ -844,7 +1003,7 @@ const TaskListPanel: React.FC<{
                     ></Td>
                   </Tr>
                 ))}
-            </>
+            </React.Fragment>
           ))}
         </Tbody>
       </Table>
@@ -1094,6 +1253,27 @@ const TaskListPanel: React.FC<{
               </Select>
             </FormControl>
 
+            <FormControl mt={3} id="status" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Status
+              </FormLabel>
+              <Select
+                value={newTask.status}
+                onChange={handleStausChange}
+                name="status"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="Not-started">Not Started</option>
+                <option value="In-progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="delay">Delay</option>
+              </Select>
+            </FormControl>
+
             <FormControl mt={3} id="risk" isRequired>
               <FormLabel fontSize="sm" fontWeight="medium">
                 Risk Level
@@ -1156,20 +1336,28 @@ const TaskListPanel: React.FC<{
             </FormControl>
           </ModalBody>
 
-          <ModalFooter>
-            <Button variant="ghost" onClick={handleCloseModal} fontSize="sm">
-              Cancel
-            </Button>
-            <Button
-              colorScheme="teal"
-              onClick={() => {
-                console.log("New Task Data:", newTask);
-                handleCloseModal();
-              }}
-              fontSize="md"
-            >
-              Save Task
-            </Button>
+          <ModalFooter justifyContent="space-between">
+            <Flex gap={2}>
+              <Button
+                colorScheme="teal"
+                onClick={editingTaskId ? handleUpdateTask : handleSaveTask}
+                fontSize="md"
+              >
+                {editingTaskId ? "Update Task" : "Save Task"}
+              </Button>
+              <Button variant="ghost" onClick={handleCloseModal} fontSize="sm">
+                Cancel
+              </Button>
+            </Flex>
+            {editingTaskId && (
+              <Button
+                colorScheme="red"
+                onClick={handleDeleteTask}
+                fontSize="sm"
+              >
+                Delete Task
+              </Button>
+            )}
           </ModalFooter>
         </ModalContent>
       </Modal>
@@ -1182,9 +1370,8 @@ const TimelinePanel: React.FC<{
   selectedTaskId: string;
   zoomLevel: string;
   expandedTaskId: string | null;
-  task: Task[];
+  tasks: Task[];
   setTask: React.Dispatch<React.SetStateAction<Task[]>>;
-
   onZoomChange: (level: string) => void;
 }> = ({
   zoomLevel,
@@ -1192,110 +1379,413 @@ const TimelinePanel: React.FC<{
   width,
   selectedTaskId,
   expandedTaskId,
-  task,
+  tasks,
   setTask,
 }) => {
-  const startDates = tasks.map((task) => new Date(task.plannedStart).getTime());
-  const endDates = tasks.map((task) => new Date(task.plannedEnd).getTime());
+  const [draggingConnection, setDraggingConnection] = useState<{
+    taskId: string;
+    point: "start" | "end";
+  } | null>(null);
 
-  const minDate = new Date(Math.min(...startDates));
-  const maxDate = new Date(Math.max(...endDates));
+  const [isEditMode, setIsEditMode] = useState(false);
 
+  const toggleEditMode = () => {
+    setIsEditMode((prev) => !prev);
+  };
 
-  const handleProgressChange = (value: number, taskId: string) => {
+  const [temporaryConnectionLine, setTemporaryConnectionLine] = useState<{
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+  } | null>(null);
+
+  const [tooltipData, setTooltipData] = useState<{
+    x: number;
+    y: number;
+    content: React.ReactNode;
+  } | null>(null);
+
+  const handleBarClick = (
+    event: React.MouseEvent<HTMLDivElement, MouseEvent>,
+    task: Task,
+    type: "planned" | "actual"
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const tooltipWidth = 250;
+    const tooltipHeight = 150;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    let calculatedX = rect.left + event.nativeEvent.offsetX;
+    let calculatedY = rect.top + event.nativeEvent.offsetY;
+
+    if (calculatedX + tooltipWidth > viewportWidth) {
+      calculatedX = viewportWidth - tooltipWidth - 10;
+    }
+
+    if (calculatedY + tooltipHeight > viewportHeight) {
+      calculatedY = viewportHeight - tooltipHeight - 10;
+    }
+
+    if (calculatedY < 0) {
+      calculatedY = 10;
+    }
+
+    const tooltipContent = (
+      <Box p={3} bg="white" borderRadius="md" boxShadow="lg" minWidth="250px">
+        <Flex align="center" mb={2}>
+          <Box
+            w="8px"
+            h="8px"
+            bg={type === "planned" ? "blue.400" : "green.400"}
+            borderRadius="full"
+            mr={2}
+          />
+          <Text fontWeight="bold" fontSize="md" color="gray.700">
+            {type === "planned"
+              ? "Planned Task Details"
+              : "Actual Task Details"}
+          </Text>
+        </Flex>
+        <Text fontSize="sm" color="gray.600">
+          <b>Task Name:</b> {task.name}
+        </Text>
+        <Text fontSize="sm" color="gray.600">
+          <b>Progress:</b> {task.inlineProgress}%
+        </Text>
+        <Text fontSize="sm" color="gray.600">
+          <b>{type === "planned" ? "Planned Start" : "Actual Start"}:</b>{" "}
+          {new Date(
+            type === "planned" ? task.plannedStart : task.actualStart
+          ).toLocaleDateString()}
+        </Text>
+        <Text fontSize="sm" color="gray.600">
+          <b>{type === "planned" ? "Planned End" : "Actual End"}:</b>{" "}
+          {new Date(
+            type === "planned" ? task.plannedEnd : task.actualEnd
+          ).toLocaleDateString()}
+        </Text>
+      </Box>
+    );
+
+    setTooltipData({
+      x: calculatedX,
+      y: calculatedY,
+      content: tooltipContent,
+    });
+  };
+  const handleCircleDragStart = (
+    e: React.MouseEvent<HTMLDivElement | SVGCircleElement, MouseEvent>,
+    task: Task,
+    point: "start" | "end"
+  ) => {
+    if (!isEditMode) return;
+    setDraggingConnection({ taskId: task.id, point });
+  };
+  const closeTooltip = () => {
+    setTooltipData(null);
+  };
+
+  const handleSubtaskBarClick = (
+    event: React.MouseEvent<HTMLDivElement, MouseEvent>,
+    subtask: Task,
+    type: "planned" | "actual"
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const tooltipContent = (
+      <Box p={3} bg="white" borderRadius="md" boxShadow="lg" minWidth="250px">
+        <Flex align="center" mb={2}>
+          <Box
+            w="8px"
+            h="8px"
+            bg={type === "planned" ? "blue.400" : "green.400"}
+            borderRadius="full"
+            mr={2}
+          />
+          <Text fontWeight="bold" fontSize="md" color="gray.700">
+            {type === "planned"
+              ? "Planned Subtask Details"
+              : "Actual Subtask Details"}
+          </Text>
+        </Flex>
+        <Text fontSize="sm" color="gray.600">
+          <b>Subtask Name:</b> {subtask.name}
+        </Text>
+        <Text fontSize="sm" color="gray.600">
+          <b>Progress:</b> {subtask.inlineProgress}%
+        </Text>
+        <Text fontSize="sm" color="gray.600">
+          <b>{type === "planned" ? "Planned Start" : "Actual Start"}:</b>{" "}
+          {new Date(
+            type === "planned" ? subtask.plannedStart : subtask.actualStart
+          ).toLocaleDateString()}
+        </Text>
+        <Text fontSize="sm" color="gray.600">
+          <b>{type === "planned" ? "Planned End" : "Actual End"}:</b>{" "}
+          {new Date(
+            type === "planned" ? subtask.plannedEnd : subtask.actualEnd
+          ).toLocaleDateString()}
+        </Text>
+      </Box>
+    );
+
+    setTooltipData({
+      x: rect.left + event.nativeEvent.offsetX,
+      y: rect.top + event.nativeEvent.offsetY,
+      content: tooltipContent,
+    });
+  };
+
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const [timelineWidth, setTimelineWidth] = useState(0);
+
+  const minDate = new Date(
+    Math.min(...tasks.map((task) => new Date(task.plannedStart).getTime()))
+  );
+  const maxDate = new Date(
+    Math.max(...tasks.map((task) => new Date(task.plannedEnd).getTime()))
+  );
+
+  const generateDateRange = (
+    minDate: Date,
+    maxDate: Date,
+    zoomLevel: string
+  ) => {
+    const range = [];
+    let currentDate = new Date(minDate);
+
+    while (currentDate <= maxDate) {
+      range.push(currentDate.toISOString().split("T")[0]);
+      switch (zoomLevel) {
+        case "days":
+          currentDate.setDate(currentDate.getDate() + 1);
+          break;
+        case "weeks":
+          currentDate.setDate(currentDate.getDate() + 7);
+          break;
+        case "months":
+          currentDate.setMonth(currentDate.getMonth() + 1);
+          break;
+        case "quarters":
+          currentDate.setMonth(currentDate.getMonth() + 3);
+          break;
+        case "years":
+          currentDate.setFullYear(currentDate.getFullYear() + 1);
+          break;
+        default:
+          currentDate.setDate(currentDate.getDate() + 1);
+      }
+    }
+
+    return range;
+  };
+
+  const dateRange = generateDateRange(minDate, maxDate, zoomLevel);
+
+  useEffect(() => {
+    setTimelineWidth(dateRange.length * 100); // Fixed width of 100px per cell
+  }, [dateRange]);
+
+  const handleDragStop = (task: Task, dragX: number) => {
+    const totalTimelineWidth = timelineWidth;
+    const timelineDuration =
+      new Date(maxDate).getTime() - new Date(minDate).getTime(); // Timeline duration in milliseconds
+
+    // Calculate the number of days moved based on drag distance
+    const daysMoved = Math.round(
+      (dragX / totalTimelineWidth) * (timelineDuration / (1000 * 60 * 60 * 24))
+    );
+
     setTask((prevTasks) =>
-      prevTasks.map((task) =>
-        task.id === taskId ? { ...task, inlineProgress: value } : task
+      prevTasks.map((t) =>
+        t.id === task.id
+          ? {
+              ...t,
+              actualStart: new Date(
+                new Date(task.actualStart).getTime() + daysMoved * 86400000
+              ).toISOString(),
+              actualEnd: new Date(
+                new Date(task.actualEnd).getTime() + daysMoved * 86400000
+              ).toISOString(),
+            }
+          : t
       )
     );
   };
 
-
- 
-
-  const dateRange = generateDateRange(
-    minDate.toISOString().split("T")[0],
-    maxDate.toISOString().split("T")[0],
-    zoomLevel
-  );
-
-  const handleDragStop = (taskId: string, offsetX: number) => {
-    const daysMoved = Math.round(offsetX / 120);
-
-    const updatedTasks = tasks.map((task) => {
-      if (task.id === taskId) {
-        const newStartDate = new Date(
-          new Date(task.actualStart).getTime() + daysMoved * 86400000
-        );
-        const newEndDate = new Date(
-          new Date(task.actualEnd).getTime() + daysMoved * 86400000
-        );
-        return {
-          ...task,
-          actualStart: newStartDate.toISOString(),
-          actualEnd: newEndDate.toISOString(),
-        };
-      }
-      return task;
-    });
-  };
-
-  const getYearRow = () => {
-    return Array.from(
-      new Set(dateRange.map((date) => new Date(date).getFullYear()))
+  const calculateBarWidth = (
+    taskStart: string,
+    taskEnd: string,
+    cellStart: string,
+    cellEnd: string,
+    cellWidth: number
+  ): string => {
+    const taskStartTime = Math.max(
+      new Date(taskStart).getTime(),
+      new Date(cellStart).getTime()
     );
+    const taskEndTime = Math.min(
+      new Date(taskEnd).getTime(),
+      new Date(cellEnd).getTime()
+    );
+    const taskDuration = Math.max(taskEndTime - taskStartTime, 0);
+    const cellDuration =
+      new Date(cellEnd).getTime() - new Date(cellStart).getTime();
+    return `${(taskDuration / cellDuration) * cellWidth}px`;
   };
 
-  const getMonthName = (date: string) => {
-    return new Date(date).toLocaleDateString("en-US", { month: "short" });
+  const calculateBarPositionAndWidth = (
+    taskStart: string,
+    taskEnd: string,
+    timelineStart: string,
+    timelineEnd: string,
+    totalTimelineWidth: number,
+    dateRange: string[],
+    isYearsZoomLevel: boolean = false
+  ) => {
+    const timelineStartTime = new Date(timelineStart).getTime();
+    const timelineEndTime = new Date(timelineEnd).getTime();
+    const taskStartTime = new Date(taskStart).getTime();
+    const taskEndTime = new Date(taskEnd).getTime();
+
+    const clampedStart = Math.max(taskStartTime, timelineStartTime);
+    const clampedEnd = Math.min(taskEndTime, timelineEndTime);
+
+    if (isYearsZoomLevel) {
+      const yearDuration = 365 * 24 * 60 * 60 * 1000;
+      const yearsCount = Math.ceil(
+        (timelineEndTime - timelineStartTime) / yearDuration
+      );
+      const totalWidth = yearsCount * 500;
+
+      const position =
+        ((clampedStart - timelineStartTime) /
+          (timelineEndTime - timelineStartTime)) *
+        totalWidth;
+      const width =
+        ((clampedEnd - clampedStart) / (timelineEndTime - timelineStartTime)) *
+        totalWidth;
+
+      return { position, width };
+    }
+
+    const timelineDuration = timelineEndTime - timelineStartTime;
+    const position =
+      ((clampedStart - timelineStartTime) / timelineDuration) *
+      totalTimelineWidth;
+    const width =
+      ((clampedEnd - clampedStart) / timelineDuration) * totalTimelineWidth;
+
+    return { position, width };
   };
 
-  const getDate = (date: string) => {
-    return new Date(date).toLocaleDateString("en-US", {
-      day: "2-digit",
-      month: "short",
-    });
+  const calculateProportionalWidth = (
+    taskStart: string,
+    taskEnd: string,
+    cellStart: string,
+    cellEnd: string,
+    totalWidth: number
+  ): { position: number; width: number } => {
+    const cellStartTime = new Date(cellStart).getTime();
+    const cellEndTime = new Date(cellEnd).getTime();
+    const taskStartTime = Math.max(
+      new Date(taskStart).getTime(),
+      cellStartTime
+    );
+    const taskEndTime = Math.min(new Date(taskEnd).getTime(), cellEndTime);
+
+    const taskDuration = Math.max(taskEndTime - taskStartTime, 0);
+    const cellDuration = cellEndTime - cellStartTime;
+
+    const width = (taskDuration / cellDuration) * totalWidth;
+    const position =
+      ((taskStartTime - cellStartTime) / cellDuration) * totalWidth;
+
+    return { position, width };
   };
 
-
+  const calculateCellWidth = (
+    cellStart: string,
+    cellEnd: string,
+    totalTimelineWidth: number,
+    totalDuration: number
+  ) => {
+    const cellDuration =
+      new Date(cellEnd).getTime() - new Date(cellStart).getTime();
+    return (cellDuration / totalDuration) * totalTimelineWidth;
+  };
 
   const renderDateRow = () => {
-    const startYear = new Date(minDate).getFullYear();
-    const endYear = new Date(maxDate).getFullYear();
+    const startYear = minDate.getFullYear();
+    const endYear = maxDate.getFullYear();
+    const startMonth = minDate.getMonth();
+    const endMonth = maxDate.getMonth();
+    const cellWidth = Math.max(timelineWidth / dateRange.length, 100);
+
+    const totalDuration = maxDate.getTime() - minDate.getTime();
+    const cellWidths = dateRange.map((_, idx) =>
+      calculateCellWidth(
+        dateRange[idx],
+        dateRange[idx + 1] || maxDate.toISOString().split("T")[0],
+        timelineWidth,
+        totalDuration
+      )
+    );
+    const ensureMinimumCells = (columns: React.ReactNode[]) => {
+      while (columns.length < 14) {
+        columns.push(
+          <Th
+            key={`placeholder-${columns.length}`}
+            textAlign="center"
+            borderColor="gray.200"
+            borderRightWidth="1px"
+            minWidth={`${cellWidth}px`}
+          ></Th>
+        );
+      }
+      return columns;
+    };
 
     if (zoomLevel === "days") {
-      const minDateObj = new Date(minDate);
-      const maxDateObj = new Date(maxDate);
-
-      if (isNaN(minDateObj.getTime()) || isNaN(maxDateObj.getTime())) {
-        console.error("Invalid date values");
-        return null;
-      }
-
-      const totalDays = Math.ceil(
-        (maxDateObj.getTime() - minDateObj.getTime()) / (1000 * 3600 * 24)
-      );
+      const columns = dateRange.map((date, idx) => (
+        <Th
+          key={idx}
+          textAlign="center"
+          borderColor="gray.200"
+          borderRightWidth="1px"
+          minWidth={`${cellWidth}px`}
+        >
+          {new Date(date).toLocaleDateString("en-US", {
+            day: "2-digit",
+            month: "short",
+          })}
+        </Th>
+      ));
+      return <Tr>{ensureMinimumCells(columns)}</Tr>;
+    } else if (zoomLevel === "weeks") {
       return (
-        <>
-          <Tr key="dates">
-            {dateRange.map((date, idx) => (
-              <Th
-                key={idx}
-                textAlign="center"
-                borderColor="gray.200"
-                borderRightWidth="1px"
-                minWidth={"120px"}
-              >
-                {getDate(date)}
-              </Th>
-            ))}
-          </Tr>
-        </>
+        <Tr>
+          {dateRange.map((date, idx) => (
+            <Th
+              key={idx}
+              textAlign="center"
+              borderColor="gray.200"
+              borderRightWidth="1px"
+              minWidth={`${cellWidth}px`}
+            >
+              {new Date(date).toLocaleDateString("en-US", {
+                month: "short",
+                day: "2-digit",
+              })}
+            </Th>
+          ))}
+        </Tr>
       );
     } else if (zoomLevel === "months") {
       return (
         <>
-          <Tr key="year">
+          <Tr>
             {Array.from(
               { length: endYear - startYear + 1 },
               (_, i) => startYear + i
@@ -1303,32 +1793,52 @@ const TimelinePanel: React.FC<{
               <Th
                 key={year}
                 textAlign="center"
-                colSpan={12}
+                colSpan={
+                  year === startYear
+                    ? 12 - startMonth
+                    : year === endYear
+                    ? endMonth + 1
+                    : 12
+                }
                 borderColor="gray.200"
                 borderRightWidth="1px"
+                minWidth={`${cellWidth}px`}
               >
                 {year}
               </Th>
             ))}
           </Tr>
-
-          <Tr key="months">
+          <Tr>
             {Array.from(
               { length: endYear - startYear + 1 },
               (_, i) => startYear + i
-            ).map((year) =>
-              Array.from({ length: 12 }, (_, monthIndex) => (
-                <Th
-                  key={`${year}-${monthIndex}`}
-                  textAlign="center"
-                  borderColor="gray.200"
-                  borderRightWidth="1px"
-                >
-                  {new Date(year, monthIndex).toLocaleString("default", {
-                    month: "short",
-                  })}
-                </Th>
-              ))
+            ).map((year, yearIdx) =>
+              Array.from(
+                {
+                  length:
+                    year === startYear
+                      ? 12 - startMonth
+                      : year === endYear
+                      ? endMonth + 1
+                      : 12,
+                },
+                (_, monthIndex) => (
+                  <Th
+                    key={`${year}-${monthIndex}`}
+                    textAlign="center"
+                    borderColor="gray.200"
+                    borderRightWidth="1px"
+                    minWidth={`${cellWidth}px`}
+                  >
+                    {new Date(
+                      year,
+                      (yearIdx === 0 ? startMonth : 0) + monthIndex
+                    ).toLocaleDateString("en-US", {
+                      month: "short",
+                    })}
+                  </Th>
+                )
+              )
             )}
           </Tr>
         </>
@@ -1336,7 +1846,7 @@ const TimelinePanel: React.FC<{
     } else if (zoomLevel === "quarters") {
       return (
         <>
-          <Tr key="year">
+          <Tr>
             {Array.from(
               { length: endYear - startYear + 1 },
               (_, i) => startYear + i
@@ -1344,30 +1854,50 @@ const TimelinePanel: React.FC<{
               <Th
                 key={year}
                 textAlign="center"
-                colSpan={4}
+                colSpan={
+                  year === startYear
+                    ? 4 - Math.floor(startMonth / 3)
+                    : year === endYear
+                    ? Math.ceil((endMonth + 1) / 3)
+                    : 4
+                }
                 borderColor="gray.200"
                 borderRightWidth="1px"
+                minWidth={`${cellWidth}px`}
               >
                 {year}
               </Th>
             ))}
           </Tr>
-
-          <Tr key="quarters">
+          <Tr>
             {Array.from(
               { length: endYear - startYear + 1 },
               (_, i) => startYear + i
             ).map((year) =>
-              ["(Jan-Mar)", "(Apr-Jun)", "(Jul-Sep)", "(Oct-Dec)"].map(
-                (quarter, idx) => (
+              Array.from(
+                {
+                  length:
+                    year === startYear
+                      ? 4 - Math.floor(startMonth / 3)
+                      : year === endYear
+                      ? Math.ceil((endMonth + 1) / 3)
+                      : 4,
+                },
+                (_, quarterIndex) => (
                   <Th
-                    key={`${year}-${quarter}`}
+                    key={`${year}-${quarterIndex}`}
                     textAlign="center"
                     borderColor="gray.200"
                     borderRightWidth="1px"
-                    minWidth="120px"
+                    fontSize={"10px"}
+                    minWidth={`${cellWidth}px`}
                   >
-                    {quarter}
+                    {
+                      ["Jan-mar", "Apr-Jun", "Jul-Sep", "Oct-Dec"][
+                        (year === startYear ? Math.floor(startMonth / 3) : 0) +
+                          quarterIndex
+                      ]
+                    }
                   </Th>
                 )
               )
@@ -1378,18 +1908,18 @@ const TimelinePanel: React.FC<{
     } else if (zoomLevel === "years") {
       return (
         <>
-          <Tr key="year">
+          <Tr>
             <Th
               textAlign="center"
               colSpan={endYear - startYear + 1}
               borderColor="gray.200"
               borderRightWidth="1px"
+              minWidth="500px"
             >
               {`${startYear} - ${endYear}`}
             </Th>
           </Tr>
-
-          <Tr key="years">
+          <Tr>
             {Array.from(
               { length: endYear - startYear + 1 },
               (_, i) => startYear + i
@@ -1399,6 +1929,7 @@ const TimelinePanel: React.FC<{
                 textAlign="center"
                 borderColor="gray.200"
                 borderRightWidth="1px"
+                minWidth="500px"
               >
                 {year}
               </Th>
@@ -1406,68 +1937,103 @@ const TimelinePanel: React.FC<{
           </Tr>
         </>
       );
-    } else if (zoomLevel === "weeks") {
-      const getWeeksInYear = (year: number) => {
-        const start = new Date(year, 0, 1);
-        const end = new Date(year, 11, 31);
-        const weeks = Math.ceil(
-          (end.getTime() - start.getTime()) / (1000 * 3600 * 24 * 7)
+    }
+
+    return null;
+  };
+
+  const renderDependencies = (tasks: Task[], timelineWidth: number) => {
+    const lines: React.ReactNode[] = [];
+    tasks.forEach((task) => {
+      if (!task.dependencies) return;
+
+      task.dependencies.forEach((dependency) => {
+        const dependentTask = tasks.find((t) => t.id === dependency.taskId);
+        if (!dependentTask) return;
+
+        const taskPosition = calculateBarPositionAndWidth(
+          task.plannedStart,
+          task.plannedEnd,
+          minDate.toISOString(),
+          maxDate.toISOString(),
+          timelineWidth,
+          dateRange
         );
-        return weeks;
-      };
+        const dependentTaskPosition = calculateBarPositionAndWidth(
+          dependentTask.plannedStart,
+          dependentTask.plannedEnd,
+          minDate.toISOString(),
+          maxDate.toISOString(),
+          timelineWidth,
+          dateRange
+        );
 
-      const weeks = [];
-      let currentWeekStart = new Date(minDate);
-      while (currentWeekStart <= new Date(maxDate)) {
-        let currentWeekEnd = new Date(currentWeekStart);
-        currentWeekEnd.setDate(currentWeekStart.getDate() + 6);
-        weeks.push({ start: currentWeekStart, end: currentWeekEnd });
-        currentWeekStart = new Date(currentWeekEnd);
-      }
+        const startX = taskPosition.position + taskPosition.width;
+        const startY = 50 + 60 * tasks.findIndex((t) => t.id === task.id); // Vertical position
+        const endX = dependentTaskPosition.position;
+        const endY =
+          50 + 60 * tasks.findIndex((t) => t.id === dependentTask.id); // Vertical position
 
+        lines.push(
+          <line
+            key={`${task.id}-${dependency.taskId}`}
+            x1={startX}
+            y1={startY}
+            x2={endX}
+            y2={endY}
+            stroke="gray"
+            strokeWidth={2}
+            markerEnd="url(#arrowhead)"
+          />
+        );
+      });
+    });
+
+    return lines;
+  };
+
+  const DraggableOrStatic: React.FC<{
+    isEditMode: boolean;
+    children: React.ReactNode;
+    onStop?: (e: DraggableEvent, data: DraggableData) => void;
+  }> = ({ isEditMode, children, onStop }) => {
+    if (isEditMode) {
       return (
-        <>
-          <Tr key="weeks">
-            {weeks.map((week, idx) => (
-              <Th
-                key={idx}
-                borderColor="gray.200"
-                borderRightWidth="1px"
-                minWidth={"120px"}
-              >
-                {getDate(week.start.toISOString())} -{" "}
-                {getDate(week.end.toISOString())}
-              </Th>
-            ))}
-          </Tr>
-        </>
+        <Draggable axis="x" onStop={onStop}>
+          {children}
+        </Draggable>
       );
     }
+    return <>{children}</>;
   };
-  const handleDrag = throttle((e: any, data: { x: number }, taskId: string) => {
-    const newProgress = Math.min(Math.max(data.x / 120, 0), 1);
-    handleProgressChange(newProgress * 100, taskId);
-  }, 50);
-
-  const gradientWidth = `${task.map((task) => task.inlineProgress)}%`;
-  const gradientStyle = {
-    background: `linear-gradient(to right, #4fd1c5 0%, #68d391 ${gradientWidth}%, #edf2f7 ${gradientWidth}%, #edf2f7 100%)`,
-  };
-
-  const calculateBarWidth = (
-    startIdx: number,
-    endIdx: number,
-    totalUnits: number
-  ): string => {
-    const unitWidth = 100 / totalUnits; 
-    return `${(endIdx - startIdx + 1) * unitWidth}%`;
-  };
-  
 
   return (
-    <Box width={width} pe={2} py={2} overflowY="auto" height="100vh">
+    <Box
+      ref={timelineRef}
+      width={width}
+      pt={1.5}
+      overflowY="auto"
+      height="100vh"
+    >
+      {tooltipData && (
+        <Box
+          position="absolute"
+          top={`${tooltipData.y}px`}
+          left={`${tooltipData.x}px`}
+          transform="translate(-50%, -100%)"
+          bg="white"
+          p={3}
+          borderRadius="md"
+          boxShadow="lg"
+          zIndex={10}
+          onClick={closeTooltip}
+        >
+          {tooltipData.content}
+        </Box>
+      )}
+
       <Flex align="center" mb={2}>
-        <Text px={2} fontSize="xl" fontWeight="bold" mr={4}>
+        <Text fontSize="xl" fontWeight="bold" mx={4}>
           Timeline
         </Text>
         <Flex align="center">
@@ -1484,256 +2050,313 @@ const TimelinePanel: React.FC<{
             <option value="years">Years</option>
           </Select>
         </Flex>
+        <Button
+          size="sm"
+          ml={4}
+          onClick={toggleEditMode}
+          colorScheme={isEditMode ? "red" : "blue"}
+        >
+          {isEditMode ? "Disable Edit" : "Enable Edit"}
+        </Button>
       </Flex>
-      <Table
-        border={"1px"}
-        borderColor={"gray.200"}
-        variant="simple"
-        colorScheme="gray"
-      >
+      <Table border="1px" borderColor="gray.200" variant="simple">
         <Thead>{renderDateRow()}</Thead>
         <Tbody>
           {tasks.map((task) => {
-            const plannedStartIdx = dateRange.indexOf(task.plannedStart);
-            const plannedEndIdx = dateRange.indexOf(task.plannedEnd);
-            const actualStartIdx = dateRange.indexOf(task.actualStart);
-            const actualEndIdx = dateRange.indexOf(task.actualEnd);
-            const plannedBarWidth = `${
-              (plannedEndIdx - plannedStartIdx + 1) * 100
-            }%`;
-            const actualBarWidth = `${
-              (actualEndIdx - actualStartIdx + 1) * 100
-            }%`;
+            const { position: plannedPosition, width: plannedWidth } =
+              zoomLevel === "years"
+                ? calculateBarPositionAndWidth(
+                    task.plannedStart,
+                    task.plannedEnd,
+                    minDate.toISOString(),
+                    maxDate.toISOString(),
+                    timelineWidth,
+                    dateRange,
+                    true
+                  )
+                : calculateBarPositionAndWidth(
+                    task.plannedStart,
+                    task.plannedEnd,
+                    minDate.toISOString(),
+                    maxDate.toISOString(),
+                    timelineWidth,
+                    dateRange
+                  );
 
-
-            
+            const { position: actualPosition, width: actualWidth } =
+              zoomLevel === "years"
+                ? calculateBarPositionAndWidth(
+                    task.actualStart,
+                    task.actualEnd,
+                    minDate.toISOString(),
+                    maxDate.toISOString(),
+                    timelineWidth,
+                    dateRange,
+                    true
+                  )
+                : calculateBarPositionAndWidth(
+                    task.actualStart,
+                    task.actualEnd,
+                    minDate.toISOString(),
+                    maxDate.toISOString(),
+                    timelineWidth,
+                    dateRange
+                  );
 
             return (
               <React.Fragment key={task.id}>
                 <Tr bg={selectedTaskId === task.id ? "blue.100" : "white"}>
-                  {dateRange.map((date, idx) => (
-                    <Td
-                      borderColor={"gray.200"}
-                      borderRightWidth="1px"
-                      height={"60px"}
-                      key={date}
-                      position="relative"
+                  <Td
+                    colSpan={dateRange.length}
+                    position="relative"
+                    height="60px"
+                    borderColor={"gray.200"}
+                    borderRightWidth="1px"
+                  >
+                    <Box
+                      position="absolute"
+                      top="50%"
+                      cursor={"pointer"}
+                      left={`${plannedPosition + 15}px`}
+                      transform="translateY(-50%)"
+                      width={`${plannedWidth}px`}
+                      height="14px"
+                      borderRadius="sm"
+                      onClick={(e) => handleBarClick(e, task, "planned")}
                     >
-                      {idx === plannedStartIdx && (
-                        <Tooltip
-                          bg={"white"}
-                          position={"absolute"}
-                          label={
-                            <Box p={2} bg="white">
-                              <Text fontWeight="bold" mb={1}>
-                                {task.name}
-                              </Text>
-                            </Box>
-                          }
-                          aria-label="Task Details"
-                          placement="top"
-                          hasArrow
-                          openDelay={0}
-                          closeDelay={0}
+                      {isEditMode && (
+                        <svg
+                          width="20"
+                          height="20"
+                          style={{
+                            position: "absolute",
+                            left: "-7px",
+                            top: "50%",
+                            transform: "translate(-50%, -50%)",
+                            cursor: "pointer",
+                          }}
                         >
-                          <Box
-                            position="absolute"
-                            top="20%"
-                            cursor={"pointer"}
-                            left={1}
-                            width={plannedBarWidth}
-                          >
-              
-                            <Progress
-                              position="absolute"
-                              top="0"
-                              w="100%"
-                              h="14px"
-                              value={task.inlineProgress}
-                              bg="blue.400"
-                              borderRadius="md"
-                              style={gradientStyle}
-                            />
-                            <Text
-                              position="absolute"
-                              top="50%"
-                              left="50%"
-                              transform="translateX(-50%) translateY(-20%)"
-                              color="white"
-                              fontWeight="bold"
-                              fontSize="xs"
-                            >
-                              {task.name}
-                            </Text>
-                          </Box>
-                        </Tooltip>
+                          <circle
+                            cx="10"
+                            cy="10"
+                            r="5"
+                            fill="gray"
+                            onMouseDown={(e) =>
+                              handleCircleDragStart(e, task, "start")
+                            }
+                          />
+                        </svg>
                       )}
-                      {idx === actualStartIdx && (
-                        <Draggable
-                          axis="x"
-                          grid={[120, 0]}
-                          onStop={(e, data) => handleDragStop(task.id, data.x)}
+                      {isEditMode && (
+                        <svg
+                          width="20"
+                          height="20"
+                          style={{
+                            position: "absolute",
+                            right: "-10px",
+                            top: "50%",
+                            transform: "translate(50%, -50%)",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <circle
+                            cx="7"
+                            cy="10"
+                            r="5"
+                            fill="gray"
+                            onMouseDown={(e) =>
+                              handleCircleDragStart(e, task, "end")
+                            }
+                          />
+                        </svg>
+                      )}
+                      <Progress
+                        position="absolute"
+                        top="0"
+                        w="100%"
+                        h="14px"
+                        value={task.inlineProgress}
+                        bg="blue.400"
+                        borderRadius="sm"
+                      />
+                      <Text
+                        position="absolute"
+                        top="10%"
+                        left="50%"
+                        transform="translateX(-50%) translateY(-20%)"
+                        color="white"
+                        fontWeight="bold"
+                        fontSize="xs"
+                      >
+                        {task.name}
+                      </Text>
+                    </Box>
+                    {/* Actual Bar */}
+
+                    <DraggableOrStatic
+                      isEditMode={isEditMode}
+                      onStop={(e, data) => handleDragStop(task, data.x)}
+                    >
+                      <Box
+                        position="absolute"
+                        top={isEditMode ? "70%" : "80%"}
+                        cursor="pointer"
+                        left={`${actualPosition + 5}px`}
+                        transform="translateY(-50%)"
+                        width={`${actualWidth}px`}
+                        bg="green.400"
+                        height="14px"
+                        borderRadius="sm"
+                        onClick={(e) => handleBarClick(e, task, "actual")}
+                      >
+                        <Progress
+                          position="absolute"
+                          top="0"
+                          w="100%"
+                          h="14px"
+                          value={task.inlineProgress}
+                          bg="green.400"
+                          sx={{
+                            bg: "green.400",
+                            "& > div": {
+                              backgroundColor: "green.600",
+                              borderRadius: "sm",
+                            },
+                          }}
+                          borderRadius="sm"
+                        />
+                        <Text
+                          position="absolute"
+                          top="10%"
+                          left="50%"
+                          transform="translateX(-50%) translateY(-20%)"
+                          color="white"
+                          fontWeight="bold"
+                          fontSize="xs"
+                        >
+                          {task.name}
+                        </Text>
+                      </Box>
+                    </DraggableOrStatic>
+                  </Td>
+                </Tr>
+                {expandedTaskId === task.id &&
+                  task.subtasks?.map((subtask) => {
+                    const {
+                      position: subPlannedPosition,
+                      width: subPlannedWidth,
+                    } =
+                      zoomLevel === "years"
+                        ? calculateBarPositionAndWidth(
+                            subtask.plannedStart,
+                            subtask.plannedEnd,
+                            minDate.toISOString(),
+                            maxDate.toISOString(),
+                            dateRange.length * 100,
+                            dateRange,
+                            true
+                          )
+                        : calculateBarPositionAndWidth(
+                            subtask.plannedStart,
+                            subtask.plannedEnd,
+                            minDate.toISOString(),
+                            maxDate.toISOString(),
+                            dateRange.length * 100,
+                            dateRange
+                          );
+
+                    const {
+                      position: subActualPosition,
+                      width: subActualWidth,
+                    } =
+                      zoomLevel === "years"
+                        ? calculateBarPositionAndWidth(
+                            subtask.actualStart,
+                            subtask.actualEnd,
+                            minDate.toISOString(),
+                            maxDate.toISOString(),
+                            dateRange.length * 100,
+                            dateRange,
+                            true
+                          )
+                        : calculateBarPositionAndWidth(
+                            subtask.actualStart,
+                            subtask.actualEnd,
+                            minDate.toISOString(),
+                            maxDate.toISOString(),
+                            dateRange.length * 100,
+                            dateRange
+                          );
+
+                    return (
+                      <Tr key={subtask.id} bg="gray.50">
+                        <Td
+                          colSpan={dateRange.length}
+                          position="relative"
+                          height="60px"
                         >
                           <Box
                             position="absolute"
                             top="50%"
-                            left={1}
-                            width={actualBarWidth}
+                            left={`${subPlannedPosition + 5}px`}
+                            transform="translateY(-50%)"
+                            width={`${subPlannedWidth}px`}
+                            bg="purple.400"
+                            height="14px"
                             cursor={"pointer"}
+                            borderRadius="sm"
+                            onClick={(e) =>
+                              handleSubtaskBarClick(e, subtask, "planned")
+                            }
                           >
-                            <Progress
-                              position="absolute"
-                              top="0"
-                              h="14px"
-                              w="100%"
-                              bg="green.300"
-                              borderRadius="md"
-                            />
-
                             <Text
                               position="absolute"
-                              top="50%"
+                              top="10%"
                               left="50%"
                               transform="translateX(-50%) translateY(-20%)"
                               color="white"
                               fontWeight="bold"
                               fontSize="xs"
                             >
-                              {task.name}
+                              {subtask.name}
                             </Text>
                           </Box>
-                        </Draggable>
-                      )}
-                    </Td>
-                  ))}
-                </Tr>
-
-                {expandedTaskId === task.id &&
-                  task.subtasks?.map((subtask) => (
-                    <Tr
-                      key={subtask.id}
-                      bg={selectedTaskId === task.id ? "white" : "white"}
-                    >
-                      {dateRange.map((date, idx) => {
-                        const plannedsubStartIdx = dateRange.indexOf(
-                          subtask.plannedStart
-                        );
-                        const plannedsubEndIdx = dateRange.indexOf(
-                          subtask.plannedEnd
-                        );
-                        const actualsubStartIdx = dateRange.indexOf(
-                          subtask.actualStart
-                        );
-                        const actualsubEndIdx = dateRange.indexOf(
-                          subtask.actualEnd
-                        );
-                        const plannedsubBarWidth = `${
-                          (plannedsubEndIdx - plannedsubStartIdx + 1) * 100
-                        }%`;
-                        const actualsubBarWidth = `${
-                          (actualsubEndIdx - actualsubStartIdx + 1) * 100
-                        }%`;
-
-                        return (
-                          <Td
-                            borderColor={"gray.200"}
-                            borderRightWidth="1px"
-                            height={"60px"}
-                            key={date}
-                            position="relative"
+                          <DraggableOrStatic
+                            isEditMode={isEditMode}
+                            onStop={(e, data) => handleDragStop(task, data.x)}
                           >
-                            {idx === plannedsubStartIdx && (
-                              <Tooltip
-                                bg={"white"}
-                                position={"absolute"}
-                                label={
-                                  <Box p={2} bg="white">
-                                    <Text fontWeight="bold" mb={1}>
-                                      {subtask.name}
-                                    </Text>
-                                  </Box>
-                                }
-                                aria-label="Task Details"
-                                placement="top"
-                                hasArrow
-                                openDelay={0}
-                                closeDelay={0}
+                            <Box
+                              position="absolute"
+                              top={isEditMode ? "70%" : "80%"}
+                              left={`${subActualPosition + 5}px`}
+                              transform="translateY(-50%)"
+                              width={`${subActualWidth}px`}
+                              bg="yellow.400"
+                              height="14px"
+                              borderRadius="sm"
+                              cursor={"pointer"}
+                              onClick={(e) =>
+                                handleSubtaskBarClick(e, subtask, "actual")
+                              }
+                            >
+                              {" "}
+                              <Text
+                                position="absolute"
+                                top="10%"
+                                left="50%"
+                                transform="translateX(-50%) translateY(-20%)"
+                                color="white"
+                                fontWeight="bold"
+                                fontSize="xs"
                               >
-                                <Box
-                                  position="absolute"
-                                  top="20%"
-                                  cursor={"pointer"}
-                                  left={1}
-                                  width={plannedsubBarWidth}
-                                >
-                                  <Progress
-                                    position="absolute"
-                                    top="20%"
-                                    h="14px"
-                                    cursor={"pointer"}
-                                    left={1}
-                                    w="100%"
-                                    bg="purple.400"
-                                    borderRadius="md"
-                                  />
-                                  <Text
-                                    position="absolute"
-                                    top="50%"
-                                    left="50%"
-                                    transform="translateX(-50%) translateY(-20%)"
-                                    color="white"
-                                    fontWeight="bold"
-                                    fontSize="xs"
-                                  >
-                                    {subtask.name}
-                                  </Text>
-                                </Box>
-                              </Tooltip>
-                            )}
-                            {idx === actualsubStartIdx && (
-                              <Draggable
-                                axis="x"
-                                grid={[120, 0]}
-                                onStop={(e, data) =>
-                                  handleDragStop(subtask.id, data.x)
-                                }
-                              >
-                                <Box
-                                  position="absolute"
-                                  top="50%"
-                                  cursor={"pointer"}
-                                  left={1}
-                                  width={actualsubBarWidth}
-                                >
-                                  <Progress
-                                    position="absolute"
-                                    top="50%"
-                                    h="14px"
-                                    left={1}
-                                    cursor={"pointer"}
-                                    w="100%"
-                                    bg="yellow.400"
-                                    borderRadius="md"
-                                  />
-                                  <Text
-                                    position="absolute"
-                                    top="50%"
-                                    left="50%"
-                                    transform="translateX(-50%) translateY(-20%)"
-                                    color="white"
-                                    fontWeight="bold"
-                                    fontSize="xs"
-                                  >
-                                    {subtask.name}
-                                  </Text>
-                                </Box>
-                              </Draggable>
-                            )}
-                          </Td>
-                        );
-                      })}
-                    </Tr>
-                  ))}
+                                {subtask.name}
+                              </Text>
+                            </Box>
+                          </DraggableOrStatic>
+                        </Td>
+                      </Tr>
+                    );
+                  })}
               </React.Fragment>
             );
           })}
@@ -1742,7 +2365,6 @@ const TimelinePanel: React.FC<{
     </Box>
   );
 };
-
 const App: React.FC = () => {
   const [panelWidth, setPanelWidth] = useState("35%");
   const [isDragging, setIsDragging] = useState(false);
@@ -1751,21 +2373,37 @@ const App: React.FC = () => {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [task, setTask] = useState<Task[]>([]);
 
-  useEffect(() => {
-    setTask(tasks);
-  }, []);
+  // const fetchTasks = async () => {
+  //   try {
+  //     const tasksCollection = collection(db, "tasks");
+  //     const taskDocs = await getDocs(tasksCollection);
+  //     const fetchedTasks: Task[] = taskDocs.docs.map((doc) => ({
+  //       id: doc.id,
+  //       ...doc.data(),
+  //     })) as Task[];
+  //     setTask(fetchedTasks);
+  //   } catch (error) {
+  //     console.error("Error fetching tasks: ", error);
+  //     alert("Failed to fetch tasks. Please try again.");
+  //   }
+  // };
+
+  // useEffect(() => {
+  //   fetchTasks();
+  // }, [task]);
 
   const handleMouseUp = () => {
     setIsDragging(false);
   };
 
-const handleMouseMove = (event: MouseEvent) => {
-  if (isDragging) {
-    const newWidth = Math.min(Math.max(event.clientX - 20, 150), window.innerWidth - 200) + "px"; 
-    setPanelWidth(newWidth);
-  }
-};
-
+  const handleMouseMove = (event: MouseEvent) => {
+    if (isDragging) {
+      const newWidth =
+        Math.min(Math.max(event.clientX - 20, 150), window.innerWidth - 200) +
+        "px";
+      setPanelWidth(newWidth);
+    }
+  };
 
   const handleMouseDown = () => {
     setIsDragging(true);
@@ -1788,6 +2426,8 @@ const handleMouseMove = (event: MouseEvent) => {
   return (
     <Flex style={{ height: "100vh" }}>
       <TaskListPanel
+        tasks={task}
+        setTask={setTask}
         width={panelWidth}
         selectedTaskId={selectedTaskId}
         onSelectTask={setSelectedTaskId}
@@ -1807,7 +2447,7 @@ const handleMouseMove = (event: MouseEvent) => {
         zoomLevel={zoomLevel}
         onZoomChange={setZoomLevel}
         expandedTaskId={expandedTaskId}
-        task={task}
+        tasks={task}
         setTask={setTask}
       />
     </Flex>
