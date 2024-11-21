@@ -1,9 +1,17 @@
-import React, { useState, useEffect, useRef,useContext, createContext } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useContext,
+  createContext,
+} from "react";
 import Draggable, { DraggableEvent, DraggableData } from "react-draggable";
-import { ChevronRightIcon } from "@chakra-ui/icons";
+
 import { IoMdArrowDropup } from "react-icons/io";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
+  faMinusSquare,
+  faPlusSquare,
   faPlus,
   faFolder,
   faFolderOpen,
@@ -73,7 +81,6 @@ interface Task {
   dependencies?: { taskId: string; type: "FS" | "SS" | "FF" | "SF" }[];
 }
 
-
 const TaskContext = createContext<{
   expandedTaskIds: Set<string>;
   toggleExpandedTask: (taskId: string) => void;
@@ -121,23 +128,24 @@ const TaskListPanel: React.FC<{
     subtasks: [],
   });
 
-
-const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
-  if (parentTaskId) {
-    // Editing a subtask
-    const parentTask = tasks.find((t) => t.id === parentTaskId);
-    const subtaskToEdit = parentTask?.subtasks?.find((sub) => sub.id === task.id);
-    if (subtaskToEdit) {
-      setNewTask({ ...subtaskToEdit });
-      setEditingTaskId(task.id); // Set editing task ID for subtask
+  const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
+    if (parentTaskId) {
+      // Editing a subtask
+      const parentTask = tasks.find((t) => t.id === parentTaskId);
+      const subtaskToEdit = parentTask?.subtasks?.find(
+        (sub) => sub.id === task.id
+      );
+      if (subtaskToEdit) {
+        setNewTask({ ...subtaskToEdit });
+        setEditingTaskId(task.id); // Set editing task ID for subtask
+      }
+    } else {
+      // Editing a parent task
+      setNewTask({ ...task });
+      setEditingTaskId(task.id); // Set editing task ID for parent task
     }
-  } else {
-    // Editing a parent task
-    setNewTask({ ...task });
-    setEditingTaskId(task.id); // Set editing task ID for parent task
-  }
-  setIsModalOpen(true); // Open modal
-};
+    setIsModalOpen(true); // Open modal
+  };
 
   // const toggleSubtasks = (taskId: string) => {
   //   setExpandedTaskId(expandedTaskId === taskId ? null : taskId);
@@ -346,17 +354,20 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
       });
       return;
     }
-  
+
     try {
       const tasksCollection = collection(db, "tasks");
-  
+
       if (newTask.id.includes(".")) {
         // Identify parent ID
         const parentId = newTask.id.split(".").slice(0, -1).join(".");
         console.log("Parent ID being searched for:", parentId);
-  
+
         // Find parent in local state
-        const findParentTask = (tasks: Task[], targetId: string): Task | null => {
+        const findParentTask = (
+          tasks: Task[],
+          targetId: string
+        ): Task | null => {
           for (const task of tasks) {
             if (task.id === targetId) return task;
             if (task.subtasks && task.subtasks.length > 0) {
@@ -366,45 +377,58 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
           }
           return null;
         };
-  
+
         const parentTask = findParentTask(tasks, parentId);
-  
+
         if (!parentTask) {
           console.error(`Parent task not found in local state: ${parentId}`);
           throw new Error(`Parent task not found: ${parentId}`);
         }
-  
+
         console.log("Found parent task:", parentTask);
-  
+
         // Add subtask to the parent
         const updatedParentTask = {
           ...parentTask,
           subtasks: [...(parentTask.subtasks || []), newTask],
         };
-  
+
         // Update local state recursively
-        const updateTasks = (tasks: Task[], targetId: string, updatedTask: Task): Task[] =>
+        const updateTasks = (
+          tasks: Task[],
+          targetId: string,
+          updatedTask: Task
+        ): Task[] =>
           tasks.map((task) =>
             task.id === targetId
               ? updatedTask
-              : { ...task, subtasks: updateTasks(task.subtasks || [], targetId, updatedTask) }
+              : {
+                  ...task,
+                  subtasks: updateTasks(
+                    task.subtasks || [],
+                    targetId,
+                    updatedTask
+                  ),
+                }
           );
-  
+
         const updatedTasks = updateTasks(tasks, parentId, updatedParentTask);
-  
+
         // Update local state
         setTask(updatedTasks);
-  
+
         // Save top-level parent document to Firestore
         const topLevelParentId = parentId.split(".")[0]; // Get the top-level parent ID
-        const topLevelParent = updatedTasks.find((t) => t.id === topLevelParentId);
-  
+        const topLevelParent = updatedTasks.find(
+          (t) => t.id === topLevelParentId
+        );
+
         if (topLevelParent) {
           const parentRef = doc(tasksCollection, topLevelParentId);
           await setDoc(parentRef, topLevelParent);
           console.log("Updated top-level parent in Firestore:", topLevelParent);
         }
-  
+
         toast({
           title: "Subtask Saved",
           description: `Subtask "${newTask.name}" added to Task ${parentId}.`,
@@ -416,10 +440,10 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
         // Handle Parent Task
         const taskRef = doc(tasksCollection, newTask.id);
         await setDoc(taskRef, newTask);
-  
+
         // Update local state
         setTask((prevTasks) => [...prevTasks, newTask]);
-  
+
         toast({
           title: "Task Saved",
           description: `Task "${newTask.name}" has been saved.`,
@@ -428,9 +452,9 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
           isClosable: true,
         });
       }
-  
+
       setIsModalOpen(false);
-    } catch (error:any) {
+    } catch (error: any) {
       console.error("Error saving task:", error);
       toast({
         title: "Error",
@@ -441,9 +465,7 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
       });
     }
   };
-  
-  
-  
+
   const handleUpdateTask = async () => {
     if (!newTask.name || !newTask.plannedStart || !newTask.plannedEnd) {
       toast({
@@ -456,7 +478,7 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
       });
       return;
     }
-  
+
     if (!editingTaskId) {
       toast({
         title: "Error",
@@ -468,17 +490,20 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
       });
       return;
     }
-  
+
     try {
       const tasksCollection = collection(db, "tasks");
-  
+
       if (editingTaskId.includes(".")) {
         // Identify parent ID
         const parentId = editingTaskId.split(".").slice(0, -1).join(".");
         console.log("Parent ID being searched for:", parentId);
-  
+
         // Find parent in local state
-        const findParentTask = (tasks: Task[], targetId: string): Task | null => {
+        const findParentTask = (
+          tasks: Task[],
+          targetId: string
+        ): Task | null => {
           for (const task of tasks) {
             if (task.id === targetId) return task;
             if (task.subtasks && task.subtasks.length > 0) {
@@ -488,52 +513,80 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
           }
           return null;
         };
-  
+
         const parentTask = findParentTask(tasks, parentId);
-  
+
         if (!parentTask) {
           console.error(`Parent task not found in local state: ${parentId}`);
           throw new Error(`Parent task not found: ${parentId}`);
         }
-  
+
         console.log("Found parent task:", parentTask);
-  
+
         // Recursively update the subtasks hierarchy
-        const updateSubtasks = (taskList: Task[], taskId: string, updatedTask: Task): Task[] =>
+        const updateSubtasks = (
+          taskList: Task[],
+          taskId: string,
+          updatedTask: Task
+        ): Task[] =>
           taskList.map((task) =>
             task.id === taskId
               ? { ...task, ...updatedTask }
-              : { ...task, subtasks: updateSubtasks(task.subtasks || [], taskId, updatedTask) }
+              : {
+                  ...task,
+                  subtasks: updateSubtasks(
+                    task.subtasks || [],
+                    taskId,
+                    updatedTask
+                  ),
+                }
           );
-  
+
         const updatedParentTask = {
           ...parentTask,
-          subtasks: updateSubtasks(parentTask.subtasks || [], editingTaskId, newTask),
+          subtasks: updateSubtasks(
+            parentTask.subtasks || [],
+            editingTaskId,
+            newTask
+          ),
         };
-  
+
         // Update local state recursively
-        const updateTasks = (tasks: Task[], targetId: string, updatedTask: Task): Task[] =>
+        const updateTasks = (
+          tasks: Task[],
+          targetId: string,
+          updatedTask: Task
+        ): Task[] =>
           tasks.map((task) =>
             task.id === targetId
               ? updatedTask
-              : { ...task, subtasks: updateTasks(task.subtasks || [], targetId, updatedTask) }
+              : {
+                  ...task,
+                  subtasks: updateTasks(
+                    task.subtasks || [],
+                    targetId,
+                    updatedTask
+                  ),
+                }
           );
-  
+
         const updatedTasks = updateTasks(tasks, parentId, updatedParentTask);
-  
+
         // Update local state
         setTask(updatedTasks);
-  
+
         // Save top-level parent document to Firestore
         const topLevelParentId = parentId.split(".")[0]; // Get the top-level parent ID
-        const topLevelParent = updatedTasks.find((t) => t.id === topLevelParentId);
-  
+        const topLevelParent = updatedTasks.find(
+          (t) => t.id === topLevelParentId
+        );
+
         if (topLevelParent) {
           const parentRef = doc(tasksCollection, topLevelParentId);
           await setDoc(parentRef, topLevelParent);
           console.log("Updated top-level parent in Firestore:", topLevelParent);
         }
-  
+
         toast({
           title: "Task Updated",
           description: `Task "${newTask.name}" has been successfully updated.`,
@@ -544,15 +597,17 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
       } else {
         // Handle Parent Task Update
         const taskRef = doc(tasksCollection, editingTaskId);
-  
+
         // Update Firestore
         await setDoc(taskRef, newTask, { merge: true });
-  
+
         // Update local state
         setTask((prevTasks) =>
-          prevTasks.map((task) => (task.id === editingTaskId ? { ...task, ...newTask } : task))
+          prevTasks.map((task) =>
+            task.id === editingTaskId ? { ...task, ...newTask } : task
+          )
         );
-  
+
         toast({
           title: "Task Updated",
           description: `Task "${newTask.name}" has been successfully updated.`,
@@ -561,10 +616,10 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
           isClosable: true,
         });
       }
-  
+
       setEditingTaskId(null);
       setIsModalOpen(false);
-    } catch (error:any) {
+    } catch (error: any) {
       console.error("Error updating task:", error);
       toast({
         title: "Error",
@@ -575,9 +630,6 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
       });
     }
   };
-  
-
-
 
   const handleDeleteTask = async () => {
     if (!editingTaskId) {
@@ -591,17 +643,20 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
       });
       return;
     }
-  
+
     try {
       const tasksCollection = collection(db, "tasks");
-  
+
       if (editingTaskId.includes(".")) {
         // Identify Parent Task ID
         const parentId = editingTaskId.split(".").slice(0, -1).join(".");
         console.log("Parent ID being searched for:", parentId);
-  
+
         // Find Parent Task in Local State
-        const findParentTask = (tasks: Task[], targetId: string): Task | null => {
+        const findParentTask = (
+          tasks: Task[],
+          targetId: string
+        ): Task | null => {
           for (const task of tasks) {
             if (task.id === targetId) return task;
             if (task.subtasks && task.subtasks.length > 0) {
@@ -611,50 +666,71 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
           }
           return null;
         };
-  
+
         const parentTask = findParentTask(tasks, parentId);
-  
+
         if (!parentTask) {
           console.error(`Parent task not found: ${parentId}`);
           throw new Error(`Parent task not found: ${parentId}`);
         }
-  
+
         console.log("Found parent task:", parentTask);
-  
+
         // Recursively remove the task from the subtasks hierarchy
-        const removeTaskFromSubtasks = (taskList: Task[], taskId: string): Task[] =>
-          taskList.filter((task) => task.id !== taskId).map((task) => ({
-            ...task,
-            subtasks: removeTaskFromSubtasks(task.subtasks || [], taskId),
-          }));
-  
+        const removeTaskFromSubtasks = (
+          taskList: Task[],
+          taskId: string
+        ): Task[] =>
+          taskList
+            .filter((task) => task.id !== taskId)
+            .map((task) => ({
+              ...task,
+              subtasks: removeTaskFromSubtasks(task.subtasks || [], taskId),
+            }));
+
         const updatedParentTask = {
           ...parentTask,
-          subtasks: removeTaskFromSubtasks(parentTask.subtasks || [], editingTaskId),
+          subtasks: removeTaskFromSubtasks(
+            parentTask.subtasks || [],
+            editingTaskId
+          ),
         };
-  
+
         // Update Local State
-        const updateTasks = (tasks: Task[], targetId: string, updatedTask: Task): Task[] =>
+        const updateTasks = (
+          tasks: Task[],
+          targetId: string,
+          updatedTask: Task
+        ): Task[] =>
           tasks.map((task) =>
             task.id === targetId
               ? updatedTask
-              : { ...task, subtasks: updateTasks(task.subtasks || [], targetId, updatedTask) }
+              : {
+                  ...task,
+                  subtasks: updateTasks(
+                    task.subtasks || [],
+                    targetId,
+                    updatedTask
+                  ),
+                }
           );
-  
+
         const updatedTasks = updateTasks(tasks, parentId, updatedParentTask);
-  
+
         setTask(updatedTasks);
-  
+
         // Save Top-Level Parent to Firestore
         const topLevelParentId = parentId.split(".")[0];
-        const topLevelParent = updatedTasks.find((task) => task.id === topLevelParentId);
-  
+        const topLevelParent = updatedTasks.find(
+          (task) => task.id === topLevelParentId
+        );
+
         if (topLevelParent) {
           const parentRef = doc(tasksCollection, topLevelParentId);
           await setDoc(parentRef, topLevelParent);
           console.log("Updated top-level parent in Firestore:", topLevelParent);
         }
-  
+
         toast({
           title: "Subtask Deleted",
           description: `Subtask "${editingTaskId}" has been successfully deleted.`,
@@ -665,15 +741,15 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
       } else {
         // Handle Parent Task Deletion
         const taskRef = doc(tasksCollection, editingTaskId);
-  
+
         // Delete Parent Task from Firestore
         await deleteDoc(taskRef);
-  
+
         // Update Local State
         setTask((prevTasks) =>
           prevTasks.filter((task) => task.id !== editingTaskId)
         );
-  
+
         toast({
           title: "Task Deleted",
           description: `Task "${editingTaskId}" has been successfully deleted.`,
@@ -682,11 +758,11 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
           isClosable: true,
         });
       }
-  
+
       // Close modal and reset state
       setEditingTaskId(null);
       setIsModalOpen(false);
-    } catch (error:any) {
+    } catch (error: any) {
       console.error("Error deleting task:", error);
       toast({
         title: "Error",
@@ -697,7 +773,6 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
       });
     }
   };
-  
 
   const renderTaskRows = (task: Task, level = 0): React.ReactNode => (
     <React.Fragment key={`task-${task.id}`}>
@@ -726,7 +801,6 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
         >
           {task.type === "task" ? `${task.stage}` : ""}
         </Td>
-
         <Td
           borderColor="gray.200"
           borderRightWidth="1px"
@@ -736,14 +810,45 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
           cursor="pointer"
           display="flex"
           alignItems="center"
-          paddingLeft={`${level * 20}px`} // Indent subtasks
+          paddingLeft={`calc(10px + ${level * 20}px)`}
         >
-          <FontAwesomeIcon
-            color={level === 0 ? "orange" : "blue"}
-            icon={expandedTaskIds.has(task.id) ? faFolderOpen : faFolder}
-            style={{ marginRight: "8px" }}
-          />
-          {task.name}
+          {task.type === "project" ? (
+            <>
+              <FontAwesomeIcon
+                icon={
+                  expandedTaskIds.has(task.id) ? faMinusSquare : faPlusSquare
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleExpandedTask(task.id);
+                }}
+                style={{ marginRight: "8px", cursor: "pointer" }}
+                color="green"
+              />
+              <FontAwesomeIcon
+                color={level === 0 ? "orange" : "blue"}
+                icon={expandedTaskIds.has(task.id) ? faFolderOpen : faFolder}
+                style={{ marginRight: "8px" }}
+              />
+            </>
+          ) : (
+            <FontAwesomeIcon
+              icon={faFileAlt}
+              color="blue"
+              style={{ marginRight: "8px" }}
+            />
+          )}
+
+          <Box
+            as="span"
+            overflow="hidden"
+            textOverflow="ellipsis"
+            whiteSpace="nowrap"
+            maxWidth="230px"
+            textAlign={"left"}
+          >
+            {task.name}
+          </Box>
         </Td>
 
         <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
@@ -860,7 +965,7 @@ const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
               borderColor={"gray.200"}
               borderRightWidth="1px"
               textAlign="center"
-              minWidth={"150px"}
+              minWidth={"250px"}
               height={`${
                 zoomLevel === "weeks"
                   ? "39px"
@@ -2320,7 +2425,9 @@ const App: React.FC = () => {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [task, setTask] = useState<Task[]>([]);
 
-  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(
+    new Set()
+  );
 
   const toggleExpandedTask = (taskId: string) => {
     setExpandedTaskIds((prevExpandedTaskIds) => {
@@ -2386,38 +2493,36 @@ const App: React.FC = () => {
 
   return (
     <TaskContext.Provider value={{ expandedTaskIds, toggleExpandedTask }}>
-    <Flex style={{ height: "100vh" }}>
-      <TaskListPanel
-        tasks={task}
-        setTask={setTask}
-        width={panelWidth}
-        selectedTaskId={selectedTaskId}
-        onSelectTask={setSelectedTaskId}
-        zoomLevel={zoomLevel}
-        expandedTaskId={expandedTaskId}
-        setExpandedTaskId={setExpandedTaskId}
-      />
-      <Box
-        width="5px"
-        bg="gray.300"
-        cursor="col-resize"
-        onMouseDown={handleMouseDown}
-      />
-      <TimelinePanel
-        width={`calc(100% - ${panelWidth})`}
-        selectedTaskId={selectedTaskId}
-        zoomLevel={zoomLevel}
-        onZoomChange={setZoomLevel}
-        expandedTaskId={expandedTaskId}
-        tasks={task}
-        setTask={setTask}
-      />
-    </Flex>
+      <Flex style={{ height: "100vh" }}>
+        <TaskListPanel
+          tasks={task}
+          setTask={setTask}
+          width={panelWidth}
+          selectedTaskId={selectedTaskId}
+          onSelectTask={setSelectedTaskId}
+          zoomLevel={zoomLevel}
+          expandedTaskId={expandedTaskId}
+          setExpandedTaskId={setExpandedTaskId}
+        />
+        <Box
+          width="5px"
+          bg="gray.300"
+          cursor="col-resize"
+          onMouseDown={handleMouseDown}
+        />
+        <TimelinePanel
+          width={`calc(100% - ${panelWidth})`}
+          selectedTaskId={selectedTaskId}
+          zoomLevel={zoomLevel}
+          onZoomChange={setZoomLevel}
+          expandedTaskId={expandedTaskId}
+          tasks={task}
+          setTask={setTask}
+        />
+      </Flex>
     </TaskContext.Provider>
   );
 };
-
-
 
 export const useTaskContext = () => {
   const context = useContext(TaskContext);
