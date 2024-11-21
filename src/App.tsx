@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef,useContext, createContext } from "react";
 import Draggable, { DraggableEvent, DraggableData } from "react-draggable";
 import { ChevronRightIcon } from "@chakra-ui/icons";
 import { IoMdArrowDropup } from "react-icons/io";
@@ -73,6 +73,12 @@ interface Task {
   dependencies?: { taskId: string; type: "FS" | "SS" | "FF" | "SF" }[];
 }
 
+
+const TaskContext = createContext<{
+  expandedTaskIds: Set<string>;
+  toggleExpandedTask: (taskId: string) => void;
+} | null>(null);
+
 const TaskListPanel: React.FC<{
   tasks: Task[];
   setTask: React.Dispatch<React.SetStateAction<Task[]>>;
@@ -93,6 +99,7 @@ const TaskListPanel: React.FC<{
   setTask,
 }) => {
   const toast = useToast();
+  const { expandedTaskIds, toggleExpandedTask } = useTaskContext();
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTask, setNewTask] = useState<Task>({
@@ -114,27 +121,27 @@ const TaskListPanel: React.FC<{
     subtasks: [],
   });
 
-  const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
-    if (parentTaskId) {
-      // If it's a subtask
-      const parentTask = tasks.find((t) => t.id === parentTaskId);
-      const subtaskToEdit = parentTask?.subtasks?.find((sub) => sub.id === task.id);
-      if (subtaskToEdit) {
-        setNewTask({ ...subtaskToEdit });
-        setEditingTaskId(task.id); 
-      }
-    } else {
-      // If it's a parent task
-      setNewTask({ ...task });
-      setEditingTaskId(task.id);
-    }
-    setIsModalOpen(true);
-  };
-  
 
-  const toggleSubtasks = (taskId: string) => {
-    setExpandedTaskId(expandedTaskId === taskId ? null : taskId);
-  };
+const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
+  if (parentTaskId) {
+    // Editing a subtask
+    const parentTask = tasks.find((t) => t.id === parentTaskId);
+    const subtaskToEdit = parentTask?.subtasks?.find((sub) => sub.id === task.id);
+    if (subtaskToEdit) {
+      setNewTask({ ...subtaskToEdit });
+      setEditingTaskId(task.id); // Set editing task ID for subtask
+    }
+  } else {
+    // Editing a parent task
+    setNewTask({ ...task });
+    setEditingTaskId(task.id); // Set editing task ID for parent task
+  }
+  setIsModalOpen(true); // Open modal
+};
+
+  // const toggleSubtasks = (taskId: string) => {
+  //   setExpandedTaskId(expandedTaskId === taskId ? null : taskId);
+  // };
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({
     x: 0,
     y: 0,
@@ -166,12 +173,31 @@ const TaskListPanel: React.FC<{
       }));
     }
   }, [newTask.actualStart, newTask.actualDuration]);
-  const handleAddTaskClick = (selectedTaskId?: string) => {
-    if (!selectedTaskId) {
-      // Add a new parent task
-      const newParentId = (tasks.length + 1).toString();
+  const handleAddTaskClick = (parentId?: string) => {
+    if (parentId) {
+      const parentTask = tasks.find((task) => task.id === parentId);
       setNewTask({
-        id: newParentId,
+        id: `${parentId}.${(parentTask?.subtasks?.length || 0) + 1}`,
+        name: "",
+        plannedStart: "",
+        plannedEnd: "",
+        actualStart: "",
+        actualEnd: "",
+        duration: 0,
+        dependency: "",
+        risk: "Medium",
+        progress: 0,
+        type: "task",
+        role: "Coordinator",
+        stage: "DR-1",
+        status: "Not-started",
+        actualDuration: 0,
+        subtasks: [],
+      });
+    } else {
+      // Creating a parent task
+      setNewTask({
+        id: `${tasks.length + 1}`,
         name: "",
         plannedStart: "",
         plannedEnd: "",
@@ -188,37 +214,10 @@ const TaskListPanel: React.FC<{
         actualDuration: 0,
         subtasks: [],
       });
-    } else {
-      // Add a subtask to the selected task
-      const selectedTask = tasks.find((task) => task.id === selectedTaskId);
-      if (selectedTask) {
-        const newSubtaskId = `${selectedTask.id}.${
-          (selectedTask.subtasks?.length || 0) + 1
-        }`;
-        setNewTask({
-          id: newSubtaskId,
-          name: "",
-          plannedStart: "",
-          plannedEnd: "",
-          actualStart: "",
-          actualEnd: "",
-          duration: 0,
-          dependency: "",
-          risk: "Medium",
-          progress: 0,
-          type: "task",
-          role: "Coordinator",
-          stage: "DR-1",
-          actualDuration: 0,
-          status: "Not-started",
-          subtasks: [],
-        });
-      }
     }
-
-    setIsModalOpen(true);
+    setEditingTaskId(null); // Reset editing task ID for new tasks
+    setIsModalOpen(true); // Open modal
   };
-
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingTaskId(null);
@@ -347,90 +346,104 @@ const TaskListPanel: React.FC<{
       });
       return;
     }
-
+  
     try {
       const tasksCollection = collection(db, "tasks");
-
+  
       if (newTask.id.includes(".")) {
-        // Handle Subtask
-        const [parentId] = newTask.id.split(".");
-        const parentTaskRef = doc(tasksCollection, parentId);
-
-        // Fetch the parent task
-        const parentTaskSnap = await getDoc(parentTaskRef);
-        if (!parentTaskSnap.exists()) {
-          throw new Error("Parent task not found.");
+        // Identify parent ID
+        const parentId = newTask.id.split(".").slice(0, -1).join(".");
+        console.log("Parent ID being searched for:", parentId);
+  
+        // Find parent in local state
+        const findParentTask = (tasks: Task[], targetId: string): Task | null => {
+          for (const task of tasks) {
+            if (task.id === targetId) return task;
+            if (task.subtasks && task.subtasks.length > 0) {
+              const found = findParentTask(task.subtasks, targetId);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+  
+        const parentTask = findParentTask(tasks, parentId);
+  
+        if (!parentTask) {
+          console.error(`Parent task not found in local state: ${parentId}`);
+          throw new Error(`Parent task not found: ${parentId}`);
         }
-
-        const parentTask = parentTaskSnap.data();
-
-        // Update the subtasks array
-        const updatedSubtasks = [
-          ...(parentTask.subtasks || []),
-          { ...newTask },
-        ];
-
-        await setDoc(parentTaskRef, {
+  
+        console.log("Found parent task:", parentTask);
+  
+        // Add subtask to the parent
+        const updatedParentTask = {
           ...parentTask,
-          subtasks: updatedSubtasks,
-        });
-
+          subtasks: [...(parentTask.subtasks || []), newTask],
+        };
+  
+        // Update local state recursively
+        const updateTasks = (tasks: Task[], targetId: string, updatedTask: Task): Task[] =>
+          tasks.map((task) =>
+            task.id === targetId
+              ? updatedTask
+              : { ...task, subtasks: updateTasks(task.subtasks || [], targetId, updatedTask) }
+          );
+  
+        const updatedTasks = updateTasks(tasks, parentId, updatedParentTask);
+  
         // Update local state
-        setTask((prevTasks) =>
-          prevTasks.map((task) =>
-            task.id === parentId ? { ...task, subtasks: updatedSubtasks } : task
-          )
-        );
-
+        setTask(updatedTasks);
+  
+        // Save top-level parent document to Firestore
+        const topLevelParentId = parentId.split(".")[0]; // Get the top-level parent ID
+        const topLevelParent = updatedTasks.find((t) => t.id === topLevelParentId);
+  
+        if (topLevelParent) {
+          const parentRef = doc(tasksCollection, topLevelParentId);
+          await setDoc(parentRef, topLevelParent);
+          console.log("Updated top-level parent in Firestore:", topLevelParent);
+        }
+  
         toast({
           title: "Subtask Saved",
           description: `Subtask "${newTask.name}" added to Task ${parentId}.`,
           status: "success",
           duration: 3000,
           isClosable: true,
-          position: "top",
         });
       } else {
         // Handle Parent Task
-        const snapshot = await getDocs(tasksCollection);
-
-        const existingIds = snapshot.docs.map(
-          (doc) => parseInt(doc.id, 10) || 0
-        );
-        const nextId = (Math.max(0, ...existingIds) + 1).toString();
-
-        const taskWithId = { ...newTask, id: nextId };
-
-        const docRef = doc(tasksCollection, nextId);
-        await setDoc(docRef, taskWithId);
-
+        const taskRef = doc(tasksCollection, newTask.id);
+        await setDoc(taskRef, newTask);
+  
         // Update local state
-        setTask((prevTasks) => [...prevTasks, taskWithId]);
-
+        setTask((prevTasks) => [...prevTasks, newTask]);
+  
         toast({
           title: "Task Saved",
-          description: `Your task "${newTask.name}" has been successfully saved.`,
+          description: `Task "${newTask.name}" has been saved.`,
           status: "success",
           duration: 3000,
           isClosable: true,
-          position: "top",
         });
       }
-
+  
       setIsModalOpen(false);
-    } catch (error) {
+    } catch (error:any) {
       console.error("Error saving task:", error);
       toast({
         title: "Error",
-        description: "Failed to save task. Please try again.",
+        description: `Failed to save task: ${error.message}`,
         status: "error",
         duration: 3000,
         isClosable: true,
-        position: "top",
       });
     }
   };
-
+  
+  
+  
   const handleUpdateTask = async () => {
     if (!newTask.name || !newTask.plannedStart || !newTask.plannedEnd) {
       toast({
@@ -457,61 +470,114 @@ const TaskListPanel: React.FC<{
     }
   
     try {
-      const isSubtask = editingTaskId.includes(".");
-      const taskRef = isSubtask
-        ? doc(db, "tasks", editingTaskId.split(".")[0]) // Reference the parent task
-        : doc(db, "tasks", editingTaskId);
+      const tasksCollection = collection(db, "tasks");
   
-      const updatedTasks = tasks.map((task) => {
-        if (task.id === editingTaskId.split(".")[0]) {
-          // Update parent task
-          if (isSubtask && task.subtasks) {
-            const updatedSubtasks = task.subtasks.map((subtask) =>
-              subtask.id === editingTaskId ? { ...subtask, ...newTask } : subtask
-            );
-            return { ...task, subtasks: updatedSubtasks };
+      if (editingTaskId.includes(".")) {
+        // Identify parent ID
+        const parentId = editingTaskId.split(".").slice(0, -1).join(".");
+        console.log("Parent ID being searched for:", parentId);
+  
+        // Find parent in local state
+        const findParentTask = (tasks: Task[], targetId: string): Task | null => {
+          for (const task of tasks) {
+            if (task.id === targetId) return task;
+            if (task.subtasks && task.subtasks.length > 0) {
+              const found = findParentTask(task.subtasks, targetId);
+              if (found) return found;
+            }
           }
-          return task.id === editingTaskId ? { ...task, ...newTask } : task;
+          return null;
+        };
+  
+        const parentTask = findParentTask(tasks, parentId);
+  
+        if (!parentTask) {
+          console.error(`Parent task not found in local state: ${parentId}`);
+          throw new Error(`Parent task not found: ${parentId}`);
         }
-        return task;
-      });
   
-      setTask(updatedTasks);
+        console.log("Found parent task:", parentTask);
   
-      // Update Firestore
-      const parentTask = updatedTasks.find(
-        (task) => task.id === editingTaskId.split(".")[0]
-      );
-      if (parentTask) {
-        await setDoc(taskRef, parentTask, { merge: true });
+        // Recursively update the subtasks hierarchy
+        const updateSubtasks = (taskList: Task[], taskId: string, updatedTask: Task): Task[] =>
+          taskList.map((task) =>
+            task.id === taskId
+              ? { ...task, ...updatedTask }
+              : { ...task, subtasks: updateSubtasks(task.subtasks || [], taskId, updatedTask) }
+          );
+  
+        const updatedParentTask = {
+          ...parentTask,
+          subtasks: updateSubtasks(parentTask.subtasks || [], editingTaskId, newTask),
+        };
+  
+        // Update local state recursively
+        const updateTasks = (tasks: Task[], targetId: string, updatedTask: Task): Task[] =>
+          tasks.map((task) =>
+            task.id === targetId
+              ? updatedTask
+              : { ...task, subtasks: updateTasks(task.subtasks || [], targetId, updatedTask) }
+          );
+  
+        const updatedTasks = updateTasks(tasks, parentId, updatedParentTask);
+  
+        // Update local state
+        setTask(updatedTasks);
+  
+        // Save top-level parent document to Firestore
+        const topLevelParentId = parentId.split(".")[0]; // Get the top-level parent ID
+        const topLevelParent = updatedTasks.find((t) => t.id === topLevelParentId);
+  
+        if (topLevelParent) {
+          const parentRef = doc(tasksCollection, topLevelParentId);
+          await setDoc(parentRef, topLevelParent);
+          console.log("Updated top-level parent in Firestore:", topLevelParent);
+        }
+  
+        toast({
+          title: "Task Updated",
+          description: `Task "${newTask.name}" has been successfully updated.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+        });
+      } else {
+        // Handle Parent Task Update
+        const taskRef = doc(tasksCollection, editingTaskId);
+  
+        // Update Firestore
+        await setDoc(taskRef, newTask, { merge: true });
+  
+        // Update local state
+        setTask((prevTasks) =>
+          prevTasks.map((task) => (task.id === editingTaskId ? { ...task, ...newTask } : task))
+        );
+  
+        toast({
+          title: "Task Updated",
+          description: `Task "${newTask.name}" has been successfully updated.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+        });
       }
-  
-      toast({
-        title: "Task Updated",
-        description: `Task "${newTask.name}" has been successfully updated.`,
-        status: "success",
-        duration: 3000,
-        isClosable: true,
-        position: "top",
-      });
   
       setEditingTaskId(null);
       setIsModalOpen(false);
-    } catch (error) {
+    } catch (error:any) {
       console.error("Error updating task:", error);
       toast({
         title: "Error",
-        description: "Failed to update task. Please try again.",
+        description: `Failed to update task: ${error.message}`,
         status: "error",
         duration: 3000,
         isClosable: true,
-        position: "top",
       });
     }
   };
   
 
-  console.log("Tasks:", tasks);
+
 
   const handleDeleteTask = async () => {
     if (!editingTaskId) {
@@ -525,84 +591,220 @@ const TaskListPanel: React.FC<{
       });
       return;
     }
-
+  
     try {
       const tasksCollection = collection(db, "tasks");
-
+  
       if (editingTaskId.includes(".")) {
-        // Handle Subtask Deletion
-        const [parentId] = editingTaskId.split(".");
-        const parentTaskRef = doc(tasksCollection, parentId);
-
-        // Fetch parent task
-        const parentTaskSnap = await getDoc(parentTaskRef);
-        if (!parentTaskSnap.exists()) {
-          throw new Error("Parent task not found.");
+        // Identify Parent Task ID
+        const parentId = editingTaskId.split(".").slice(0, -1).join(".");
+        console.log("Parent ID being searched for:", parentId);
+  
+        // Find Parent Task in Local State
+        const findParentTask = (tasks: Task[], targetId: string): Task | null => {
+          for (const task of tasks) {
+            if (task.id === targetId) return task;
+            if (task.subtasks && task.subtasks.length > 0) {
+              const found = findParentTask(task.subtasks, targetId);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+  
+        const parentTask = findParentTask(tasks, parentId);
+  
+        if (!parentTask) {
+          console.error(`Parent task not found: ${parentId}`);
+          throw new Error(`Parent task not found: ${parentId}`);
         }
-
-        const parentTask = parentTaskSnap.data();
-        const updatedSubtasks = parentTask.subtasks.filter(
-          (subtask: Task) => subtask.id !== editingTaskId
-        );
-
-    
-        await setDoc(parentTaskRef, {
+  
+        console.log("Found parent task:", parentTask);
+  
+        // Recursively remove the task from the subtasks hierarchy
+        const removeTaskFromSubtasks = (taskList: Task[], taskId: string): Task[] =>
+          taskList.filter((task) => task.id !== taskId).map((task) => ({
+            ...task,
+            subtasks: removeTaskFromSubtasks(task.subtasks || [], taskId),
+          }));
+  
+        const updatedParentTask = {
           ...parentTask,
-          subtasks: updatedSubtasks,
-        });
-
-    
-        setTask((prevTasks) =>
-          prevTasks.map((task) =>
-            task.id === parentId ? { ...task, subtasks: updatedSubtasks } : task
-          )
-        );
-
+          subtasks: removeTaskFromSubtasks(parentTask.subtasks || [], editingTaskId),
+        };
+  
+        // Update Local State
+        const updateTasks = (tasks: Task[], targetId: string, updatedTask: Task): Task[] =>
+          tasks.map((task) =>
+            task.id === targetId
+              ? updatedTask
+              : { ...task, subtasks: updateTasks(task.subtasks || [], targetId, updatedTask) }
+          );
+  
+        const updatedTasks = updateTasks(tasks, parentId, updatedParentTask);
+  
+        setTask(updatedTasks);
+  
+        // Save Top-Level Parent to Firestore
+        const topLevelParentId = parentId.split(".")[0];
+        const topLevelParent = updatedTasks.find((task) => task.id === topLevelParentId);
+  
+        if (topLevelParent) {
+          const parentRef = doc(tasksCollection, topLevelParentId);
+          await setDoc(parentRef, topLevelParent);
+          console.log("Updated top-level parent in Firestore:", topLevelParent);
+        }
+  
         toast({
           title: "Subtask Deleted",
           description: `Subtask "${editingTaskId}" has been successfully deleted.`,
           status: "success",
           duration: 3000,
           isClosable: true,
-          position: "top",
         });
       } else {
         // Handle Parent Task Deletion
         const taskRef = doc(tasksCollection, editingTaskId);
-
-        // Delete from Firestore
+  
+        // Delete Parent Task from Firestore
         await deleteDoc(taskRef);
-
-        // Update local state
+  
+        // Update Local State
         setTask((prevTasks) =>
           prevTasks.filter((task) => task.id !== editingTaskId)
         );
-
+  
         toast({
           title: "Task Deleted",
           description: `Task "${editingTaskId}" has been successfully deleted.`,
           status: "success",
           duration: 3000,
           isClosable: true,
-          position: "top",
         });
       }
-
+  
       // Close modal and reset state
       setEditingTaskId(null);
       setIsModalOpen(false);
-    } catch (error) {
+    } catch (error:any) {
       console.error("Error deleting task:", error);
       toast({
         title: "Error",
-        description: "Failed to delete task. Please try again.",
+        description: `Failed to delete task: ${error.message}`,
         status: "error",
         duration: 3000,
         isClosable: true,
-        position: "top",
       });
     }
   };
+  
+
+  const renderTaskRows = (task: Task, level = 0): React.ReactNode => (
+    <React.Fragment key={`task-${task.id}`}>
+      <Tr
+        fontSize="sm"
+        key={task.id}
+        bg={selectedTaskId === task.id ? "blue.100" : "white"}
+        onClick={() => onSelectTask(task.id)}
+        onDoubleClick={() => handleRowDoubleClick(task)}
+        _hover={{ bg: "gray.100", cursor: "pointer" }}
+      >
+        <Td
+          borderColor="gray.200"
+          borderRightWidth="1px"
+          textAlign="center"
+          height="60px"
+        >
+          {task.id}
+        </Td>
+
+        <Td
+          borderColor="gray.200"
+          borderRightWidth="1px"
+          textAlign="center"
+          height="60px"
+        >
+          {task.type === "task" ? `${task.stage}` : ""}
+        </Td>
+
+        <Td
+          borderColor="gray.200"
+          borderRightWidth="1px"
+          textAlign="center"
+          height="60px"
+          onClick={() => toggleExpandedTask(task.id)}
+          cursor="pointer"
+          display="flex"
+          alignItems="center"
+          paddingLeft={`${level * 20}px`} // Indent subtasks
+        >
+          <FontAwesomeIcon
+            color={level === 0 ? "orange" : "blue"}
+            icon={expandedTaskIds.has(task.id) ? faFolderOpen : faFolder}
+            style={{ marginRight: "8px" }}
+          />
+          {task.name}
+        </Td>
+
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.plannedStart}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.plannedEnd}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.actualStart}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.actualEnd}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.duration}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.dependency}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.risk}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          <Box width="100%">
+            <Progress
+              height="5px"
+              width={`${task.progress}%`}
+              backgroundColor={
+                task.progress < 30
+                  ? "red.400"
+                  : task.progress < 70
+                  ? "yellow.400"
+                  : "green.400"
+              }
+              borderRadius="md"
+            />
+          </Box>
+        </Td>
+        <Td
+          borderColor="gray.200"
+          borderRightWidth="1px"
+          textAlign="center"
+          minWidth="20px"
+          cursor="pointer"
+          color="blue.500"
+          _hover={{ color: "blue.600", transform: "scale(1.3)" }}
+        >
+          <FontAwesomeIcon
+            icon={faPlus}
+            onClick={() => handleAddTaskClick(task.id)}
+            size="sm"
+          />
+        </Td>
+      </Tr>
+      {/* Render Subtasks if the task is expanded */}
+      {expandedTaskIds.has(task.id) &&
+        task.subtasks &&
+        task.subtasks.map((subtask) => renderTaskRows(subtask, level + 1))}
+    </React.Fragment>
+  );
 
   return (
     <Box width={width} p={2} overflowY="auto" height="100vh">
@@ -750,262 +952,7 @@ const TaskListPanel: React.FC<{
             </Th>
           </Tr>
         </Thead>
-        <Tbody>
-          {tasks.map((task) => (
-            <React.Fragment key={`task-${task.id}`}>
-              <Tr
-                fontSize="sm"
-                key={task.id}
-                bg={selectedTaskId === task.id ? "blue.100" : "white"}
-                onClick={() => onSelectTask(task.id)}
-                onDoubleClick={() => handleRowDoubleClick(task)}
-                _hover={{ bg: "gray.100", cursor: "pointer" }}
-              >
-                <Td
-                  borderColor={"gray.200"}
-                  borderRightWidth="1px"
-                  textAlign="center"
-                  height={"60px"}
-                >
-                  {task.id}
-                </Td>
-
-                <Td
-                  borderColor={"gray.200"}
-                  borderRightWidth="1px"
-                  textAlign="center"
-                  height={"60px"}
-                >
-                  {task.type === "task" ? `${task.stage}` : ""}
-                </Td>
-                <Td
-                  borderColor={"gray.200"}
-                  borderRightWidth="1px"
-                  textAlign="center"
-                  height={"60px"}
-                  onClick={() => toggleSubtasks(task.id)}
-                  cursor="pointer"
-                  display="flex"
-                  alignItems={"center"}
-                >
-                  <FontAwesomeIcon
-                    color="orange"
-                    icon={expandedTaskId === task.id ? faFolderOpen : faFolder}
-                    style={{ marginRight: "8px" }}
-                  />
-                  {task.name}
-                </Td>
-                <Td
-                  borderColor={"gray.200"}
-                  borderRightWidth="1px"
-                  textAlign="center"
-                >
-                  {task.plannedStart}
-                </Td>
-                <Td
-                  borderColor={"gray.200"}
-                  borderRightWidth="1px"
-                  textAlign="center"
-                >
-                  {task.plannedEnd}
-                </Td>
-                <Td
-                  borderColor={"gray.200"}
-                  borderRightWidth="1px"
-                  textAlign="center"
-                >
-                  {task.actualStart}
-                </Td>
-                <Td
-                  borderColor={"gray.200"}
-                  borderRightWidth="1px"
-                  textAlign="center"
-                >
-                  {task.actualEnd}
-                </Td>
-                <Td
-                  borderColor={"gray.200"}
-                  borderRightWidth="1px"
-                  textAlign="center"
-                >
-                  {task.duration}
-                </Td>
-                <Td
-                  borderColor={"gray.200"}
-                  borderRightWidth="1px"
-                  textAlign="center"
-                >
-                  {task.dependency}
-                </Td>
-                <Td
-                  borderColor={"gray.200"}
-                  borderRightWidth="1px"
-                  textAlign="center"
-                >
-                  {task.risk}
-                </Td>
-                <Td
-                  borderColor={"gray.200"}
-                  borderRightWidth="1px"
-                  textAlign="center"
-                >
-                  <Box width="100%">
-                    <Progress
-                      height="5px"
-                      width={`${task.progress}%`}
-                      backgroundColor={
-                        task.progress < 30
-                          ? "red.400"
-                          : task.progress < 70
-                          ? "yellow.400"
-                          : "green.400"
-                      }
-                      borderRadius="md"
-                    />
-                  </Box>
-                </Td>
-                <Td
-                  borderColor="gray.200"
-                  borderRightWidth="1px"
-                  textAlign="center"
-                  minWidth="20px"
-                  cursor="pointer"
-                  color="blue.500"
-                  _hover={{ color: "blue.600", transform: "scale(1.3)" }}
-                >
-                  <FontAwesomeIcon
-                    icon={faPlus}
-                    onClick={() => handleAddTaskClick(task.id)}
-                    size="sm"
-                  />
-                </Td>
-              </Tr>
-              {expandedTaskId === task.id &&
-                task.subtasks &&
-                task.subtasks.map((subtask) => (
-                  <Tr
-                    key={subtask.id}
-                    fontSize="sm"
-                    bg={selectedTaskId === task.id ? "white" : "white"}
-                    _hover={{ bg: "gray.100", cursor: "pointer" }}
-                    onDoubleClick={() => handleRowDoubleClick(subtask, task.id)}
-                  >
-                    <Td
-                      borderColor={"gray.200"}
-                      borderRightWidth="1px"
-                      textAlign="center"
-                      height={"60px"}
-                    >
-                      {subtask.id}
-                    </Td>
-
-                    <Td
-                      borderColor={"gray.200"}
-                      borderRightWidth="1px"
-                      textAlign="center"
-                      height={"60px"}
-                    >
-                      {subtask.type === "task" ? `${subtask.stage}` : ""}
-                    </Td>
-                    <Td
-                      borderColor={"gray.200"}
-                      borderRightWidth="1px"
-                      textAlign="center"
-                      height={"60px"}
-                      display={"flex"}
-                      alignItems={"center"}
-                      marginLeft={"10px"}
-                    >
-                      <FontAwesomeIcon
-                        color="blue"
-                        icon={faFileAlt}
-                        style={{ marginRight: "8px" }}
-                      />
-                      {subtask.name}
-                    </Td>
-                    <Td
-                      borderColor={"gray.200"}
-                      borderRightWidth="1px"
-                      textAlign="center"
-                    >
-                      {subtask.plannedStart}
-                    </Td>
-                    <Td
-                      borderColor={"gray.200"}
-                      borderRightWidth="1px"
-                      textAlign="center"
-                    >
-                      {subtask.plannedEnd}
-                    </Td>
-                    <Td
-                      borderColor={"gray.200"}
-                      borderRightWidth="1px"
-                      textAlign="center"
-                    >
-                      {subtask.actualStart}
-                    </Td>
-                    <Td
-                      borderColor={"gray.200"}
-                      borderRightWidth="1px"
-                      textAlign="center"
-                    >
-                      {subtask.actualEnd}
-                    </Td>
-                    <Td
-                      borderColor={"gray.200"}
-                      borderRightWidth="1px"
-                      textAlign="center"
-                    >
-                      {subtask.duration}
-                    </Td>
-                    <Td
-                      borderColor={"gray.200"}
-                      borderRightWidth="1px"
-                      textAlign="center"
-                    >
-                      {subtask.dependency}
-                    </Td>
-                    <Td
-                      borderColor={"gray.200"}
-                      borderRightWidth="1px"
-                      textAlign="center"
-                    >
-                      {subtask.risk}
-                    </Td>
-                    <Td
-                      borderColor={"gray.200"}
-                      borderRightWidth="1px"
-                      textAlign="center"
-                    >
-                      <Box width="100%">
-                        <Progress
-                          height="5px"
-                          width={`${subtask.progress}%`}
-                          backgroundColor={
-                            subtask.progress < 30
-                              ? "red.400"
-                              : subtask.progress < 70
-                              ? "yellow.400"
-                              : "green.400"
-                          }
-                          borderRadius="md"
-                        />
-                      </Box>
-                    </Td>
-                    <Td
-                      borderColor="gray.200"
-                      borderRightWidth="1px"
-                      textAlign="center"
-                      minWidth="20px"
-                      cursor="pointer"
-                      color="blue.500"
-                      _hover={{ color: "blue.600", transform: "scale(1.3)" }}
-                    ></Td>
-                  </Tr>
-                ))}
-            </React.Fragment>
-          ))}
-        </Tbody>
+        <Tbody>{tasks.map((task) => renderTaskRows(task))}</Tbody>
       </Table>
 
       <Modal isOpen={isModalOpen} onClose={handleCloseModal} size="lg">
@@ -2373,6 +2320,20 @@ const App: React.FC = () => {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [task, setTask] = useState<Task[]>([]);
 
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
+
+  const toggleExpandedTask = (taskId: string) => {
+    setExpandedTaskIds((prevExpandedTaskIds) => {
+      const newExpandedTaskIds = new Set(prevExpandedTaskIds);
+      if (newExpandedTaskIds.has(taskId)) {
+        newExpandedTaskIds.delete(taskId); // Collapse the task
+      } else {
+        newExpandedTaskIds.add(taskId); // Expand the task
+      }
+      return newExpandedTaskIds;
+    });
+  };
+
   // const fetchTasks = async () => {
   //   try {
   //     const tasksCollection = collection(db, "tasks");
@@ -2424,6 +2385,7 @@ const App: React.FC = () => {
   }, [isDragging]);
 
   return (
+    <TaskContext.Provider value={{ expandedTaskIds, toggleExpandedTask }}>
     <Flex style={{ height: "100vh" }}>
       <TaskListPanel
         tasks={task}
@@ -2451,7 +2413,18 @@ const App: React.FC = () => {
         setTask={setTask}
       />
     </Flex>
+    </TaskContext.Provider>
   );
+};
+
+
+
+export const useTaskContext = () => {
+  const context = useContext(TaskContext);
+  if (!context) {
+    throw new Error("useTaskContext must be used within a TaskProvider");
+  }
+  return context;
 };
 
 export default App;

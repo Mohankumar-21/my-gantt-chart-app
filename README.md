@@ -2476,3 +2476,2568 @@ const tasks: Task[] = [
     ],
   },
 ];
+
+
+
+
+interface Task {
+  id: string;
+  name: string;
+  plannedStart: string;
+  plannedEnd: string;
+  actualStart: string;
+  actualEnd: string;
+  duration: number;
+  actualDuration?: number;
+  dependency: string;
+  risk: string;
+  inlineProgress?: number;
+  progress: number;
+  role?: string;
+  status: string;
+  type: string;
+  stage?: string;
+  subtasks?: Task[];
+  dependencies?: { taskId: string; type: "FS" | "SS" | "FF" | "SF" }[];
+}
+
+const TaskListPanel: React.FC<{
+  tasks: Task[];
+  setTask: React.Dispatch<React.SetStateAction<Task[]>>;
+  width: string;
+  selectedTaskId: string;
+  onSelectTask: (id: string) => void;
+  zoomLevel: string;
+  expandedTaskId: string | null;
+  setExpandedTaskId: React.Dispatch<React.SetStateAction<string | null>>;
+}> = ({
+  selectedTaskId,
+  onSelectTask,
+  width,
+  zoomLevel,
+  expandedTaskId,
+  setExpandedTaskId,
+  tasks,
+  setTask,
+}) => {
+  const toast = useToast();
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newTask, setNewTask] = useState<Task>({
+    id: "",
+    name: "",
+    plannedStart: "",
+    plannedEnd: "",
+    actualStart: "",
+    actualEnd: "",
+    duration: 0,
+    dependency: "",
+    risk: "Medium",
+    progress: 0,
+    type: "project",
+    role: "Coordinator",
+    stage: "DR-1",
+    status: "Not-started",
+    actualDuration: 0,
+    subtasks: [],
+  });
+
+  const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
+    if (parentTaskId) {
+      // If it's a subtask
+      const parentTask = tasks.find((t) => t.id === parentTaskId);
+      const subtaskToEdit = parentTask?.subtasks?.find(
+        (sub) => sub.id === task.id
+      );
+      if (subtaskToEdit) {
+        setNewTask({ ...subtaskToEdit });
+        setEditingTaskId(task.id);
+      }
+    } else {
+      // If it's a parent task
+      setNewTask({ ...task });
+      setEditingTaskId(task.id);
+    }
+    setIsModalOpen(true);
+  };
+
+  const toggleSubtasks = (taskId: string) => {
+    setExpandedTaskId(expandedTaskId === taskId ? null : taskId);
+  };
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (newTask.plannedStart && newTask.duration) {
+      const startDate = new Date(newTask.plannedStart);
+      startDate.setDate(startDate.getDate() + newTask.duration);
+      const plannedEndDate = startDate.toISOString().split("T")[0];
+
+      setNewTask((prev) => ({
+        ...prev,
+        plannedEnd: plannedEndDate,
+      }));
+    }
+  }, [newTask.plannedStart, newTask.duration]);
+
+  useEffect(() => {
+    if (newTask.actualStart && newTask.actualDuration) {
+      const startDate = new Date(newTask.actualStart);
+      startDate.setDate(startDate.getDate() + newTask.actualDuration);
+      const actualEndDate = startDate.toISOString().split("T")[0];
+
+      setNewTask((prev) => ({
+        ...prev,
+        actualEnd: actualEndDate,
+      }));
+    }
+  }, [newTask.actualStart, newTask.actualDuration]);
+  const handleAddTaskClick = (selectedTaskId?: string) => {
+    if (!selectedTaskId) {
+      // Add a new parent task
+      const newParentId = (tasks.length + 1).toString();
+      setNewTask({
+        id: newParentId,
+        name: "",
+        plannedStart: "",
+        plannedEnd: "",
+        actualStart: "",
+        actualEnd: "",
+        duration: 0,
+        dependency: "",
+        risk: "Medium",
+        progress: 0,
+        type: "project",
+        role: "Coordinator",
+        stage: "DR-1",
+        status: "Not-started",
+        actualDuration: 0,
+        subtasks: [],
+      });
+    } else {
+      // Add a subtask to the selected task
+      const selectedTask = tasks.find((task) => task.id === selectedTaskId);
+      if (selectedTask) {
+        const newSubtaskId = `${selectedTask.id}.${
+          (selectedTask.subtasks?.length || 0) + 1
+        }`;
+        setNewTask({
+          id: newSubtaskId,
+          name: "",
+          plannedStart: "",
+          plannedEnd: "",
+          actualStart: "",
+          actualEnd: "",
+          duration: 0,
+          dependency: "",
+          risk: "Medium",
+          progress: 0,
+          type: "task",
+          role: "Coordinator",
+          stage: "DR-1",
+          actualDuration: 0,
+          status: "Not-started",
+          subtasks: [],
+        });
+      }
+    }
+
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setEditingTaskId(null);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setNewTask((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+  const handleDurationChange = (change: number) => {
+    setNewTask((prev) => {
+      const newDuration = prev.duration + change;
+      return {
+        ...prev,
+        duration: Math.max(newDuration, 0),
+      };
+    });
+  };
+
+  const handleActualDurationChange = (change: number) => {
+    setNewTask((prev) => {
+      const newDuration = (prev.actualDuration || 0) + change;
+      return {
+        ...prev,
+        actualDuration: Math.max(newDuration, 0),
+      };
+    });
+  };
+
+  const handleRiskChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      risk: e.target.value,
+    }));
+  };
+
+  const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      type: e.target.value,
+    }));
+  };
+
+  const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      role: e.target.value,
+    }));
+  };
+
+  const handleStageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      stage: e.target.value,
+    }));
+  };
+
+  const handleStausChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      status: e.target.value,
+    }));
+  };
+
+  const handleProgressChange = (value: number) => {
+    setNewTask((prev) => ({
+      ...prev,
+      progress: value,
+    }));
+  };
+
+  const handleSliderMouseMove = (e: React.MouseEvent) => {
+    const sliderRect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - sliderRect.left;
+    const percentage = (x / sliderRect.width) * 100;
+    setTooltipPos({
+      x: e.clientX,
+      y: e.clientY,
+    });
+    setNewTask((prev) => ({
+      ...prev,
+      progress: Math.min(Math.max(percentage, 0), 100),
+    }));
+  };
+
+  useEffect(() => {
+    const fetchTasks = async () => {
+      try {
+        const tasksCollection = collection(db, "tasks");
+        const snapshot = await getDocs(tasksCollection);
+        const tasksData = snapshot.docs
+          .map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }))
+          .sort((a, b) => parseInt(a.id) - parseInt(b.id)) as Task[];
+        setTask(tasksData);
+      } catch (error) {
+        console.error("Error fetching tasks:", error);
+        toast({
+          title: "Error",
+          description: "Failed to fetch tasks. Please try again.",
+          status: "error",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      }
+    };
+
+    fetchTasks();
+  }, []);
+
+  const handleSaveTask = async () => {
+    if (!newTask.name || !newTask.plannedStart || !newTask.plannedEnd) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields.",
+        status: "warning",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    try {
+      const tasksCollection = collection(db, "tasks");
+
+      if (newTask.id.includes(".")) {
+        // Handle Subtask
+        const [parentId] = newTask.id.split(".");
+        const parentTaskRef = doc(tasksCollection, parentId);
+
+        // Fetch the parent task
+        const parentTaskSnap = await getDoc(parentTaskRef);
+        if (!parentTaskSnap.exists()) {
+          throw new Error("Parent task not found.");
+        }
+
+        const parentTask = parentTaskSnap.data();
+
+        // Update the subtasks array
+        const updatedSubtasks = [
+          ...(parentTask.subtasks || []),
+          { ...newTask },
+        ];
+
+        await setDoc(parentTaskRef, {
+          ...parentTask,
+          subtasks: updatedSubtasks,
+        });
+
+        // Update local state
+        setTask((prevTasks) =>
+          prevTasks.map((task) =>
+            task.id === parentId ? { ...task, subtasks: updatedSubtasks } : task
+          )
+        );
+
+        toast({
+          title: "Subtask Saved",
+          description: `Subtask "${newTask.name}" added to Task ${parentId}.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      } else {
+        // Handle Parent Task
+        const snapshot = await getDocs(tasksCollection);
+
+        const existingIds = snapshot.docs.map(
+          (doc) => parseInt(doc.id, 10) || 0
+        );
+        const nextId = (Math.max(0, ...existingIds) + 1).toString();
+
+        const taskWithId = { ...newTask, id: nextId };
+
+        const docRef = doc(tasksCollection, nextId);
+        await setDoc(docRef, taskWithId);
+
+        // Update local state
+        setTask((prevTasks) => [...prevTasks, taskWithId]);
+
+        toast({
+          title: "Task Saved",
+          description: `Your task "${newTask.name}" has been successfully saved.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      }
+
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Error saving task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save task. Please try again.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    }
+  };
+
+  const handleUpdateTask = async () => {
+    if (!newTask.name || !newTask.plannedStart || !newTask.plannedEnd) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields.",
+        status: "warning",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    if (!editingTaskId) {
+      toast({
+        title: "Error",
+        description: "No task selected for update.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    try {
+      const isSubtask = editingTaskId.includes(".");
+      const taskRef = isSubtask
+        ? doc(db, "tasks", editingTaskId.split(".")[0]) // Reference the parent task
+        : doc(db, "tasks", editingTaskId);
+
+      const updatedTasks = tasks.map((task) => {
+        if (task.id === editingTaskId.split(".")[0]) {
+          // Update parent task
+          if (isSubtask && task.subtasks) {
+            const updatedSubtasks = task.subtasks.map((subtask) =>
+              subtask.id === editingTaskId
+                ? { ...subtask, ...newTask }
+                : subtask
+            );
+            return { ...task, subtasks: updatedSubtasks };
+          }
+          return task.id === editingTaskId ? { ...task, ...newTask } : task;
+        }
+        return task;
+      });
+
+      setTask(updatedTasks);
+
+      // Update Firestore
+      const parentTask = updatedTasks.find(
+        (task) => task.id === editingTaskId.split(".")[0]
+      );
+      if (parentTask) {
+        await setDoc(taskRef, parentTask, { merge: true });
+      }
+
+      toast({
+        title: "Task Updated",
+        description: `Task "${newTask.name}" has been successfully updated.`,
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+
+      setEditingTaskId(null);
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Error updating task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update task. Please try again.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    }
+  };
+
+  console.log("Tasks:", tasks);
+
+  const handleDeleteTask = async () => {
+    if (!editingTaskId) {
+      toast({
+        title: "Error",
+        description: "No task selected for deletion.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    try {
+      const tasksCollection = collection(db, "tasks");
+
+      if (editingTaskId.includes(".")) {
+        // Handle Subtask Deletion
+        const [parentId] = editingTaskId.split(".");
+        const parentTaskRef = doc(tasksCollection, parentId);
+
+        // Fetch parent task
+        const parentTaskSnap = await getDoc(parentTaskRef);
+        if (!parentTaskSnap.exists()) {
+          throw new Error("Parent task not found.");
+        }
+
+        const parentTask = parentTaskSnap.data();
+        const updatedSubtasks = parentTask.subtasks.filter(
+          (subtask: Task) => subtask.id !== editingTaskId
+        );
+
+        await setDoc(parentTaskRef, {
+          ...parentTask,
+          subtasks: updatedSubtasks,
+        });
+
+        setTask((prevTasks) =>
+          prevTasks.map((task) =>
+            task.id === parentId ? { ...task, subtasks: updatedSubtasks } : task
+          )
+        );
+
+        toast({
+          title: "Subtask Deleted",
+          description: `Subtask "${editingTaskId}" has been successfully deleted.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      } else {
+        // Handle Parent Task Deletion
+        const taskRef = doc(tasksCollection, editingTaskId);
+
+        // Delete from Firestore
+        await deleteDoc(taskRef);
+
+        // Update local state
+        setTask((prevTasks) =>
+          prevTasks.filter((task) => task.id !== editingTaskId)
+        );
+
+        toast({
+          title: "Task Deleted",
+          description: `Task "${editingTaskId}" has been successfully deleted.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      }
+
+      // Close modal and reset state
+      setEditingTaskId(null);
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Error deleting task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete task. Please try again.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    }
+  };
+
+  const renderTaskRows = (task: Task, level: number) => {
+    return (
+      <React.Fragment key={`task-${task.id}`}>
+        <Tr
+          fontSize="sm"
+          key={task.id}
+          bg={selectedTaskId === task.id ? "blue.100" : "white"}
+          onClick={() => onSelectTask(task.id)}
+          onDoubleClick={() => handleRowDoubleClick(task)}
+          _hover={{ bg: "gray.100", cursor: "pointer" }}
+        >
+          <Td
+            borderColor={"gray.200"}
+            borderRightWidth="1px"
+            textAlign="center"
+            height={"60px"}
+          >
+            {task.id}
+          </Td>
+
+          <Td
+            borderColor={"gray.200"}
+            borderRightWidth="1px"
+            textAlign="center"
+            height={"60px"}
+          >
+            {task.type === "task" ? `${task.stage}` : ""}
+          </Td>
+          <Td
+            borderColor={"gray.200"}
+            borderRightWidth="1px"
+            textAlign="center"
+            height={"60px"}
+            onClick={
+              task.type === "project"
+                ? () => toggleSubtasks(task.id)
+                : undefined
+            }
+            cursor={task.type === "project" ? "pointer" : "default"}
+            display="flex"
+            alignItems={"center"}
+          >
+            {task.type === "project" ? (
+              <FontAwesomeIcon
+                color="orange"
+                icon={expandedTaskId === task.id ? faFolderOpen : faFolder}
+                style={{ marginRight: "8px" }}
+              />
+            ) : (
+              <FontAwesomeIcon
+                color="blue"
+                icon={faFileAlt}
+                style={{ marginRight: "8px" }}
+              />
+            )}
+            {task.name}
+          </Td>
+          <Td
+            borderColor={"gray.200"}
+            borderRightWidth="1px"
+            textAlign="center"
+          >
+            {task.plannedStart}
+          </Td>
+          <Td
+            borderColor={"gray.200"}
+            borderRightWidth="1px"
+            textAlign="center"
+          >
+            {task.plannedEnd}
+          </Td>
+          <Td
+            borderColor={"gray.200"}
+            borderRightWidth="1px"
+            textAlign="center"
+          >
+            {task.actualStart}
+          </Td>
+          <Td
+            borderColor={"gray.200"}
+            borderRightWidth="1px"
+            textAlign="center"
+          >
+            {task.actualEnd}
+          </Td>
+          <Td
+            borderColor={"gray.200"}
+            borderRightWidth="1px"
+            textAlign="center"
+          >
+            {task.duration}
+          </Td>
+          <Td
+            borderColor={"gray.200"}
+            borderRightWidth="1px"
+            textAlign="center"
+          >
+            {task.dependency}
+          </Td>
+          <Td
+            borderColor={"gray.200"}
+            borderRightWidth="1px"
+            textAlign="center"
+          >
+            {task.risk}
+          </Td>
+          <Td
+            borderColor={"gray.200"}
+            borderRightWidth="1px"
+            textAlign="center"
+          >
+            <Box width="100%">
+              <Progress
+                height="5px"
+                width={`${task.progress}%`}
+                backgroundColor={
+                  task.progress < 30
+                    ? "red.400"
+                    : task.progress < 70
+                    ? "yellow.400"
+                    : "green.400"
+                }
+                borderRadius="md"
+              />
+            </Box>
+          </Td>
+          {task.type === "project" && (
+            <Td
+              borderColor="gray.200"
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth="20px"
+              cursor="pointer"
+              color="blue.500"
+              _hover={{ color: "blue.600", transform: "scale(1.3)" }}
+            >
+              <FontAwesomeIcon
+                icon={faPlus}
+                onClick={() => handleAddTaskClick(task.id)}
+                size="sm"
+              />
+            </Td>
+          )}
+        </Tr>
+
+        {expandedTaskId === task.id &&
+          task.subtasks &&
+          task.subtasks.map((subtask) => renderTaskRows(subtask, level + 1))}
+      </React.Fragment>
+    );
+  };
+
+  return (
+    <Box width={width} p={2} overflowY="auto" height="100vh">
+      <Flex gap={5}>
+        <Text fontSize="xl" fontWeight="bold" mb={4}>
+          Task Details
+        </Text>
+        <Button
+          onClick={() => handleAddTaskClick()}
+          bg="teal.500"
+          color="white"
+          size="sm"
+          fontWeight="bold"
+          borderRadius="md"
+          _hover={{
+            bg: "teal.600",
+            transform: "scale(1.05)",
+          }}
+          _active={{
+            bg: "teal.700",
+            transform: "scale(1.02)",
+          }}
+        >
+          + Add Task
+        </Button>
+      </Flex>
+
+      <Table
+        border={"1px"}
+        borderColor={"gray.200"}
+        variant="simple"
+        colorScheme="gray"
+      >
+        <Thead>
+          <Tr fontSize="5px">
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"80px"}
+            >
+              WBS
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"80px"}
+            >
+              Stage
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
+              height={`${
+                zoomLevel === "weeks"
+                  ? "39px"
+                  : `${zoomLevel === "days" ? "21px" : "83px"}`
+              }`}
+            >
+              Task Name
+            </Th>
+
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"160px"}
+            >
+              Planned Start
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"160px"}
+            >
+              Planned End
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
+            >
+              Actual Start
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
+            >
+              Actual End
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
+            >
+              Duration
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
+            >
+              Dependency
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"120px"}
+            >
+              Risk
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"120px"}
+            >
+              Progress
+            </Th>
+
+            <Th
+              borderColor="gray.200"
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth="20px"
+              cursor="pointer"
+              color="blue.500"
+              _hover={{ color: "blue.600", transform: "scale(1.3)" }}
+            >
+              <FontAwesomeIcon
+                onClick={() => handleAddTaskClick()}
+                icon={faPlus}
+                size="lg"
+              />
+            </Th>
+          </Tr>
+        </Thead>
+        <Tbody>{tasks.map((task) => renderTaskRows(task, 0))}</Tbody>
+      </Table>
+
+      <Modal isOpen={isModalOpen} onClose={handleCloseModal} size="lg">
+        <ModalOverlay />
+        <ModalContent minWidth={650} borderRadius="md" boxShadow="xl">
+          <ModalHeader
+            fontSize="lg"
+            fontWeight="semibold"
+            color="teal.600"
+            fontFamily="'Inter', sans-serif"
+          >
+            Add New Task
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody pb={6} fontFamily="'Inter', sans-serif">
+            <FormControl id="taskName" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Task Name
+              </FormLabel>
+              <Input
+                value={newTask.name}
+                onChange={handleInputChange}
+                name="name"
+                placeholder="Enter task name"
+                fontSize="sm"
+                p={3}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              />
+            </FormControl>
+
+            <FormControl mt={3} id="risk" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Type
+              </FormLabel>
+              <Select
+                value={newTask.type}
+                onChange={handleTypeChange}
+                name="risk"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="task">task</option>
+                <option value="project">project</option>
+                <option value="milestone">milestone</option>
+              </Select>
+            </FormControl>
+
+            <FormControl mt={5} id="planned" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Planned
+              </FormLabel>
+              <Flex justify="space-between" align="center" mt={3}>
+                <Box flex="1" mr={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    Start
+                  </FormLabel>
+                  <Input
+                    type="date"
+                    value={newTask.plannedStart}
+                    onChange={handleInputChange}
+                    name="plannedStart"
+                    fontSize="sm"
+                    p={3}
+                    borderColor="gray.300"
+                    _hover={{ borderColor: "teal.500" }}
+                    _focus={{ borderColor: "teal.500" }}
+                  />
+                </Box>
+
+                <Box flex="1" mx={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    Duration (in days)
+                  </FormLabel>
+                  <Flex alignItems="center" justify="center">
+                    <Button
+                      onClick={() => handleDurationChange(-1)}
+                      fontSize="sm"
+                      variant="outline"
+                      colorScheme="teal"
+                      _hover={{ bg: "teal.100" }}
+                    >
+                      -
+                    </Button>
+                    <Text mx={3} fontSize="sm" fontWeight="semibold">
+                      {newTask.duration} days
+                    </Text>
+                    <Button
+                      onClick={() => handleDurationChange(1)}
+                      fontSize="sm"
+                      variant="outline"
+                      colorScheme="teal"
+                      _hover={{ bg: "teal.100" }}
+                    >
+                      +
+                    </Button>
+                  </Flex>
+                </Box>
+
+                <Box flex="1" ml={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    End
+                  </FormLabel>
+                  <Input
+                    type="date"
+                    value={newTask.plannedEnd}
+                    isReadOnly
+                    disabled
+                    fontSize="sm"
+                    p={3}
+                    borderColor="gray.300"
+                    _focus={{ borderColor: "gray.300" }}
+                  />
+                </Box>
+              </Flex>
+            </FormControl>
+
+            <FormControl mt={5} id="actual" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Actual
+              </FormLabel>
+              <Flex justify="space-between" align="center" mt={3}>
+                <Box flex="1" mr={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    Start
+                  </FormLabel>
+                  <Input
+                    type="date"
+                    value={newTask.actualStart}
+                    onChange={handleInputChange}
+                    name="actualStart"
+                    fontSize="sm"
+                    p={3}
+                    borderColor="gray.300"
+                    _hover={{ borderColor: "teal.500" }}
+                    _focus={{ borderColor: "teal.500" }}
+                  />
+                </Box>
+
+                <Box flex="1" mx={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    Duration (in days)
+                  </FormLabel>
+                  <Flex alignItems="center" justify="center">
+                    <Button
+                      onClick={() => handleActualDurationChange(-1)}
+                      fontSize="sm"
+                      variant="outline"
+                      colorScheme="teal"
+                      _hover={{ bg: "teal.100" }}
+                    >
+                      -
+                    </Button>
+                    <Text mx={3} fontSize="sm" fontWeight="semibold">
+                      {newTask.actualDuration} days
+                    </Text>
+                    <Button
+                      onClick={() => handleActualDurationChange(1)}
+                      fontSize="sm"
+                      variant="outline"
+                      colorScheme="teal"
+                      _hover={{ bg: "teal.100" }}
+                    >
+                      +
+                    </Button>
+                  </Flex>
+                </Box>
+
+                <Box flex="1" ml={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    End
+                  </FormLabel>
+                  <Input
+                    type="date"
+                    value={newTask.actualEnd}
+                    isReadOnly
+                    disabled
+                    fontSize="sm"
+                    p={3}
+                    borderColor="gray.300"
+                    _focus={{ borderColor: "gray.300" }}
+                  />
+                </Box>
+              </Flex>
+            </FormControl>
+
+            <FormControl mt={5} id="dependency" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Dependency
+              </FormLabel>
+              <Input
+                value={newTask.dependency}
+                onChange={handleInputChange}
+                name="dependency"
+                placeholder="Dependency task"
+                fontSize="sm"
+                p={3}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              />
+            </FormControl>
+
+            <FormControl mt={3} id="role" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Role
+              </FormLabel>
+              <Select
+                value={newTask.role}
+                onChange={handleRoleChange}
+                name="role"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="coordinator">Coordinator</option>
+                <option value="manager">Manager</option>
+                <option value="user">User</option>
+              </Select>
+            </FormControl>
+
+            <FormControl mt={3} id="stage" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Stage
+              </FormLabel>
+              <Select
+                value={newTask.stage}
+                onChange={handleStageChange}
+                name="stage"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="DR-1">DR-1</option>
+                <option value="DR-2">DR-2</option>
+                <option value="DR`">DR-3</option>
+              </Select>
+            </FormControl>
+
+            <FormControl mt={3} id="status" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Status
+              </FormLabel>
+              <Select
+                value={newTask.status}
+                onChange={handleStausChange}
+                name="status"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="Not-started">Not Started</option>
+                <option value="In-progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="delay">Delay</option>
+              </Select>
+            </FormControl>
+
+            <FormControl mt={3} id="risk" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Risk Level
+              </FormLabel>
+              <Select
+                value={newTask.risk}
+                onChange={handleRiskChange}
+                name="risk"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+              </Select>
+            </FormControl>
+
+            <FormControl mt={5} id="progress">
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Progress
+              </FormLabel>
+              <Box position="relative" onMouseMove={handleSliderMouseMove}>
+                <Slider
+                  value={newTask.progress}
+                  onChange={handleProgressChange}
+                  min={0}
+                  max={100}
+                  step={1}
+                  aria-label="Progress slider"
+                  size="sm"
+                >
+                  <SliderTrack>
+                    <SliderFilledTrack />
+                  </SliderTrack>
+                  <SliderThumb />
+                </Slider>
+                <Box
+                  ref={tooltipRef}
+                  position="absolute"
+                  top={-2}
+                  left={90}
+                  transform="translateX(-50%) translateY(-100%)"
+                  bg="gray.700"
+                  color="white"
+                  height={7}
+                  width={7}
+                  borderRadius="50%"
+                  padding="4px"
+                  py={2}
+                  textAlign="center"
+                  fontSize="9px"
+                  opacity={newTask.progress === 0 ? 0 : 1}
+                >
+                  {Math.round(newTask.progress)}%
+                </Box>
+              </Box>
+            </FormControl>
+          </ModalBody>
+
+          <ModalFooter justifyContent="space-between">
+            <Flex gap={2}>
+              <Button
+                colorScheme="teal"
+                onClick={editingTaskId ? handleUpdateTask : handleSaveTask}
+                fontSize="md"
+              >
+                {editingTaskId ? "Update Task" : "Save Task"}
+              </Button>
+              <Button variant="ghost" onClick={handleCloseModal} fontSize="sm">
+                Cancel
+              </Button>
+            </Flex>
+            {editingTaskId && (
+              <Button
+                colorScheme="red"
+                onClick={handleDeleteTask}
+                fontSize="sm"
+              >
+                Delete Task
+              </Button>
+            )}
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+    </Box>
+  );
+};
+
+
+
+const tasks: Task[] = [
+  {
+    id: "1",
+    name: "Project Initialization",
+    plannedStart: "2024-11-01",
+    plannedEnd: "2024-11-05",
+    actualStart: "2024-11-01",
+    actualEnd: "2024-11-04",
+    duration: 5,
+    actualDuration: 4,
+    dependency: "",
+    risk: "Low",
+    progress: 100,
+    status: "Completed",
+    type: "task",
+    role: "Project Manager",
+    stage: "Initiation",
+    subtasks: [
+      {
+        id: "1.1",
+        name: "Requirement Gathering",
+        plannedStart: "2024-11-01",
+        plannedEnd: "2024-11-03",
+        actualStart: "2024-11-01",
+        actualEnd: "2024-11-02",
+        duration: 3,
+        actualDuration: 2,
+        dependency: "",
+        risk: "Medium",
+        progress: 100,
+        status: "Completed",
+        type: "subtask",
+        role: "Analyst",
+        stage: "Requirements",
+        subtasks: [
+          {
+            id: "1.1.1",
+            name: "Stakeholder Interviews",
+            plannedStart: "2024-11-01",
+            plannedEnd: "2024-11-02",
+            actualStart: "2024-11-01",
+            actualEnd: "2024-11-02",
+            duration: 2,
+            actualDuration: 2,
+            dependency: "",
+            risk: "Low",
+            progress: 100,
+            status: "Completed",
+            type: "subtask",
+            subtasks: [],
+          },
+          {
+            id: "1.1.2",
+            name: "Document Requirements",
+            plannedStart: "2024-11-02",
+            plannedEnd: "2024-11-03",
+            actualStart: "2024-11-02",
+            actualEnd: "2024-11-02",
+            duration: 1,
+            actualDuration: 1,
+            dependency: "1.1.1",
+            risk: "Low",
+            progress: 100,
+            status: "Completed",
+            type: "subtask",
+            subtasks: [],
+          },
+        ],
+      },
+      {
+        id: "1.2",
+        name: "Feasibility Study",
+        plannedStart: "2024-11-03",
+        plannedEnd: "2024-11-05",
+        actualStart: "2024-11-03",
+        actualEnd: "2024-11-04",
+        duration: 3,
+        actualDuration: 2,
+        dependency: "1.1",
+        risk: "High",
+        progress: 100,
+        status: "Completed",
+        type: "subtask",
+        role: "Architect",
+        stage: "Feasibility",
+        subtasks: [
+          {
+            id: "1.2.1",
+            name: "Technical Feasibility",
+            plannedStart: "2024-11-03",
+            plannedEnd: "2024-11-04",
+            actualStart: "2024-11-03",
+            actualEnd: "2024-11-03",
+            duration: 1,
+            actualDuration: 1,
+            dependency: "",
+            risk: "Medium",
+            progress: 100,
+            status: "Completed",
+            type: "subtask",
+            subtasks: [],
+          },
+          {
+            id: "1.2.2",
+            name: "Cost Analysis",
+            plannedStart: "2024-11-04",
+            plannedEnd: "2024-11-05",
+            actualStart: "2024-11-04",
+            actualEnd: "2024-11-04",
+            duration: 1,
+            actualDuration: 1,
+            dependency: "1.2.1",
+            risk: "Medium",
+            progress: 100,
+            status: "Completed",
+            type: "subtask",
+            subtasks: [],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "2",
+    name: "Design Phase",
+    plannedStart: "2024-11-06",
+    plannedEnd: "2024-11-10",
+    actualStart: "2024-11-06",
+    actualEnd: "2024-11-09",
+    duration: 5,
+    actualDuration: 4,
+    dependency: "1",
+    risk: "Medium",
+    progress: 80,
+    status: "In Progress",
+    type: "task",
+    role: "Architect",
+    stage: "Design",
+    subtasks: [
+      {
+        id: "2.1",
+        name: "UI/UX Design",
+        plannedStart: "2024-11-06",
+        plannedEnd: "2024-11-08",
+        actualStart: "2024-11-06",
+        actualEnd: "2024-11-07",
+        duration: 3,
+        actualDuration: 2,
+        dependency: "",
+        risk: "Low",
+        progress: 100,
+        status: "Completed",
+        type: "subtask",
+        subtasks: [],
+      },
+      {
+        id: "2.2",
+        name: "Database Schema Design",
+        plannedStart: "2024-11-08",
+        plannedEnd: "2024-11-10",
+        actualStart: "2024-11-08",
+        actualEnd: "2024-11-09",
+        duration: 3,
+        actualDuration: 2,
+        dependency: "2.1",
+        risk: "Medium",
+        progress: 60,
+        status: "In Progress",
+        type: "subtask",
+        subtasks: [
+          {
+            id: "2.2.1",
+            name: "Entity Relationship Diagram (ERD)",
+            plannedStart: "2024-11-08",
+            plannedEnd: "2024-11-09",
+            actualStart: "2024-11-08",
+            actualEnd: "2024-11-08",
+            duration: 1,
+            actualDuration: 1,
+            dependency: "",
+            risk: "Low",
+            progress: 100,
+            status: "Completed",
+            type: "subtask",
+            subtasks: [],
+          },
+          {
+            id: "2.2.2",
+            name: "Normalization",
+            plannedStart: "2024-11-09",
+            plannedEnd: "2024-11-10",
+            actualStart: "2024-11-09",
+            actualEnd: "",
+            duration: 1,
+            dependency: "2.2.1",
+            risk: "Medium",
+            progress: 40,
+            status: "In Progress",
+            type: "subtask",
+            subtasks: [],
+          },
+        ],
+      },
+    ],
+  },
+];
+const TaskListPanel: React.FC<{
+  tasks: Task[];
+  setTask: React.Dispatch<React.SetStateAction<Task[]>>;
+  width: string;
+  selectedTaskId: string;
+  onSelectTask: (id: string) => void;
+  zoomLevel: string;
+  expandedTaskId: string | null;
+  setExpandedTaskId: React.Dispatch<React.SetStateAction<string | null>>;
+}> = ({
+  selectedTaskId,
+  onSelectTask,
+  width,
+  zoomLevel,
+  expandedTaskId,
+  setExpandedTaskId,
+  tasks,
+  setTask,
+}) => {
+  const toast = useToast();
+  const { expandedTaskIds, toggleExpandedTask } = useTaskContext();
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newTask, setNewTask] = useState<Task>({
+    id: "",
+    name: "",
+    plannedStart: "",
+    plannedEnd: "",
+    actualStart: "",
+    actualEnd: "",
+    duration: 0,
+    dependency: "",
+    risk: "Medium",
+    progress: 0,
+    type: "project",
+    role: "Coordinator",
+    stage: "DR-1",
+    status: "Not-started",
+    actualDuration: 0,
+    subtasks: [],
+  });
+
+  const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
+    if (parentTaskId) {
+      // If it's a subtask
+      const parentTask = tasks.find((t) => t.id === parentTaskId);
+      const subtaskToEdit = parentTask?.subtasks?.find(
+        (sub) => sub.id === task.id
+      );
+      if (subtaskToEdit) {
+        setNewTask({ ...subtaskToEdit });
+        setEditingTaskId(task.id);
+      }
+    } else {
+      // If it's a parent task
+      setNewTask({ ...task });
+      setEditingTaskId(task.id);
+    }
+    setIsModalOpen(true);
+  };
+
+  // const toggleSubtasks = (taskId: string) => {
+  //   setExpandedTaskId(expandedTaskId === taskId ? null : taskId);
+  // };
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (newTask.plannedStart && newTask.duration) {
+      const startDate = new Date(newTask.plannedStart);
+      startDate.setDate(startDate.getDate() + newTask.duration);
+      const plannedEndDate = startDate.toISOString().split("T")[0];
+
+      setNewTask((prev) => ({
+        ...prev,
+        plannedEnd: plannedEndDate,
+      }));
+    }
+  }, [newTask.plannedStart, newTask.duration]);
+
+  useEffect(() => {
+    if (newTask.actualStart && newTask.actualDuration) {
+      const startDate = new Date(newTask.actualStart);
+      startDate.setDate(startDate.getDate() + newTask.actualDuration);
+      const actualEndDate = startDate.toISOString().split("T")[0];
+
+      setNewTask((prev) => ({
+        ...prev,
+        actualEnd: actualEndDate,
+      }));
+    }
+  }, [newTask.actualStart, newTask.actualDuration]);
+  const handleAddTaskClick = (parentId?: string) => {
+    if (parentId) {
+      const selectedTask = tasks.find(
+        (task) =>
+          task.id === parentId ||
+          task.subtasks?.find((sub) => sub.id === parentId)
+      );
+
+      setNewTask({
+        id: `${parentId}.${(selectedTask?.subtasks?.length || 0) + 1}`,
+        name: "",
+        plannedStart: "",
+        plannedEnd: "",
+        actualStart: "",
+        actualEnd: "",
+        duration: 0,
+        dependency: "",
+        risk: "Medium",
+        progress: 0,
+        type: "task",
+        role: "Coordinator",
+        stage: "DR-1",
+        status: "Not-started",
+        actualDuration: 0,
+        subtasks: [],
+      });
+      setIsModalOpen(true);
+    } else {
+      // Add a parent task
+      const newParentId = `${tasks.length + 1}`;
+      setNewTask({
+        id: newParentId,
+        name: "",
+        plannedStart: "",
+        plannedEnd: "",
+        actualStart: "",
+        actualEnd: "",
+        duration: 0,
+        dependency: "",
+        risk: "Medium",
+        progress: 0,
+        type: "project",
+        role: "Coordinator",
+        stage: "DR-1",
+        status: "Not-started",
+        actualDuration: 0,
+        subtasks: [],
+      });
+      setIsModalOpen(true);
+    }
+  };
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setEditingTaskId(null);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setNewTask((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+  const handleDurationChange = (change: number) => {
+    setNewTask((prev) => {
+      const newDuration = prev.duration + change;
+      return {
+        ...prev,
+        duration: Math.max(newDuration, 0),
+      };
+    });
+  };
+
+  const handleActualDurationChange = (change: number) => {
+    setNewTask((prev) => {
+      const newDuration = (prev.actualDuration || 0) + change;
+      return {
+        ...prev,
+        actualDuration: Math.max(newDuration, 0),
+      };
+    });
+  };
+
+  const handleRiskChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      risk: e.target.value,
+    }));
+  };
+
+  const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      type: e.target.value,
+    }));
+  };
+
+  const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      role: e.target.value,
+    }));
+  };
+
+  const handleStageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      stage: e.target.value,
+    }));
+  };
+
+  const handleStausChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setNewTask((prev) => ({
+      ...prev,
+      status: e.target.value,
+    }));
+  };
+
+  const handleProgressChange = (value: number) => {
+    setNewTask((prev) => ({
+      ...prev,
+      progress: value,
+    }));
+  };
+
+  const handleSliderMouseMove = (e: React.MouseEvent) => {
+    const sliderRect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - sliderRect.left;
+    const percentage = (x / sliderRect.width) * 100;
+    setTooltipPos({
+      x: e.clientX,
+      y: e.clientY,
+    });
+    setNewTask((prev) => ({
+      ...prev,
+      progress: Math.min(Math.max(percentage, 0), 100),
+    }));
+  };
+
+  useEffect(() => {
+    const fetchTasks = async () => {
+      try {
+        const tasksCollection = collection(db, "tasks");
+        const snapshot = await getDocs(tasksCollection);
+        const tasksData = snapshot.docs
+          .map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }))
+          .sort((a, b) => parseInt(a.id) - parseInt(b.id)) as Task[];
+        setTask(tasksData);
+      } catch (error) {
+        console.error("Error fetching tasks:", error);
+        toast({
+          title: "Error",
+          description: "Failed to fetch tasks. Please try again.",
+          status: "error",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      }
+    };
+
+    fetchTasks();
+  }, []);
+
+  const handleSaveTask = async () => {
+    console.log(editingTaskId)
+    if (!newTask.name || !newTask.plannedStart || !newTask.plannedEnd) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields.",
+        status: "warning",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    try {
+      const tasksCollection = collection(db, "tasks");
+
+      if (newTask.id.includes(".")) {
+        // Handle Subtask
+        const [parentId] = newTask.id.split(".");
+        const parentTaskRef = doc(tasksCollection, parentId);
+
+        // Fetch the parent task
+        const parentTaskSnap = await getDoc(parentTaskRef);
+        if (!parentTaskSnap.exists()) {
+          throw new Error("Parent task not found.");
+        }
+
+        const parentTask = parentTaskSnap.data();
+
+        // Update the subtasks array
+        const updatedSubtasks = [
+          ...(parentTask.subtasks || []),
+          { ...newTask },
+        ];
+
+        await setDoc(parentTaskRef, {
+          ...parentTask,
+          subtasks: updatedSubtasks,
+        });
+
+        // Update local state
+        setTask((prevTasks) =>
+          prevTasks.map((task) =>
+            task.id === parentId ? { ...task, subtasks: updatedSubtasks } : task
+          )
+        );
+
+        toast({
+          title: "Subtask Saved",
+          description: `Subtask "${newTask.name}" added to Task ${parentId}.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      } else {
+        // Handle Parent Task
+        const snapshot = await getDocs(tasksCollection);
+
+        const existingIds = snapshot.docs.map(
+          (doc) => parseInt(doc.id, 10) || 0
+        );
+        const nextId = (Math.max(0, ...existingIds) + 1).toString();
+
+        const taskWithId = { ...newTask, id: nextId };
+
+        const docRef = doc(tasksCollection, nextId);
+        await setDoc(docRef, taskWithId);
+
+        // Update local state
+        setTask((prevTasks) => [...prevTasks, taskWithId]);
+
+        toast({
+          title: "Task Saved",
+          description: `Your task "${newTask.name}" has been successfully saved.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      }
+
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Error saving task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save task. Please try again.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    }
+  };
+
+  const handleUpdateTask = async () => {
+    if (!newTask.name || !newTask.plannedStart || !newTask.plannedEnd) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields.",
+        status: "warning",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    if (!editingTaskId) {
+      toast({
+        title: "Error",
+        description: "No task selected for update.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    try {
+      const isSubtask = editingTaskId.includes(".");
+      const taskRef = isSubtask
+        ? doc(db, "tasks", editingTaskId.split(".")[0]) // Reference the parent task
+        : doc(db, "tasks", editingTaskId);
+
+      const updatedTasks = tasks.map((task) => {
+        if (task.id === editingTaskId.split(".")[0]) {
+          // Update parent task
+          if (isSubtask && task.subtasks) {
+            const updatedSubtasks = task.subtasks.map((subtask) =>
+              subtask.id === editingTaskId
+                ? { ...subtask, ...newTask }
+                : subtask
+            );
+            return { ...task, subtasks: updatedSubtasks };
+          }
+          return task.id === editingTaskId ? { ...task, ...newTask } : task;
+        }
+        return task;
+      });
+
+      setTask(updatedTasks);
+
+      // Update Firestore
+      const parentTask = updatedTasks.find(
+        (task) => task.id === editingTaskId.split(".")[0]
+      );
+      if (parentTask) {
+        await setDoc(taskRef, parentTask, { merge: true });
+      }
+
+      toast({
+        title: "Task Updated",
+        description: `Task "${newTask.name}" has been successfully updated.`,
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+
+      setEditingTaskId(null);
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Error updating task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update task. Please try again.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    }
+  };
+
+  console.log("Tasks:", tasks);
+
+  const handleDeleteTask = async () => {
+    if (!editingTaskId) {
+      toast({
+        title: "Error",
+        description: "No task selected for deletion.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    try {
+      const tasksCollection = collection(db, "tasks");
+
+      if (editingTaskId.includes(".")) {
+        // Handle Subtask Deletion
+        const [parentId] = editingTaskId.split(".");
+        const parentTaskRef = doc(tasksCollection, parentId);
+
+        // Fetch parent task
+        const parentTaskSnap = await getDoc(parentTaskRef);
+        if (!parentTaskSnap.exists()) {
+          throw new Error("Parent task not found.");
+        }
+
+        const parentTask = parentTaskSnap.data();
+        const updatedSubtasks = parentTask.subtasks.filter(
+          (subtask: Task) => subtask.id !== editingTaskId
+        );
+
+        await setDoc(parentTaskRef, {
+          ...parentTask,
+          subtasks: updatedSubtasks,
+        });
+
+        setTask((prevTasks) =>
+          prevTasks.map((task) =>
+            task.id === parentId ? { ...task, subtasks: updatedSubtasks } : task
+          )
+        );
+
+        toast({
+          title: "Subtask Deleted",
+          description: `Subtask "${editingTaskId}" has been successfully deleted.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      } else {
+        // Handle Parent Task Deletion
+        const taskRef = doc(tasksCollection, editingTaskId);
+
+        // Delete from Firestore
+        await deleteDoc(taskRef);
+
+        // Update local state
+        setTask((prevTasks) =>
+          prevTasks.filter((task) => task.id !== editingTaskId)
+        );
+
+        toast({
+          title: "Task Deleted",
+          description: `Task "${editingTaskId}" has been successfully deleted.`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+      }
+
+      // Close modal and reset state
+      setEditingTaskId(null);
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Error deleting task:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete task. Please try again.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    }
+  };
+
+  const renderTaskRows = (task: Task, level = 0): React.ReactNode => (
+    <React.Fragment key={`task-${task.id}`}>
+      <Tr
+        fontSize="sm"
+        key={task.id}
+        bg={selectedTaskId === task.id ? "blue.100" : "white"}
+        onClick={() => onSelectTask(task.id)}
+        onDoubleClick={() => handleRowDoubleClick(task)}
+        _hover={{ bg: "gray.100", cursor: "pointer" }}
+      >
+        <Td
+          borderColor="gray.200"
+          borderRightWidth="1px"
+          textAlign="center"
+          height="60px"
+        >
+          {task.id}
+        </Td>
+
+        <Td
+          borderColor="gray.200"
+          borderRightWidth="1px"
+          textAlign="center"
+          height="60px"
+        >
+          {task.type === "task" ? `${task.stage}` : ""}
+        </Td>
+
+        <Td
+          borderColor="gray.200"
+          borderRightWidth="1px"
+          textAlign="center"
+          height="60px"
+          onClick={() => toggleExpandedTask(task.id)}
+          cursor="pointer"
+          display="flex"
+          alignItems="center"
+          paddingLeft={`${level * 20}px`} // Indent subtasks
+        >
+          <FontAwesomeIcon
+            color={level === 0 ? "orange" : "blue"}
+            icon={expandedTaskIds.has(task.id) ? faFolderOpen : faFolder}
+            style={{ marginRight: "8px" }}
+          />
+          {task.name}
+        </Td>
+
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.plannedStart}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.plannedEnd}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.actualStart}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.actualEnd}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.duration}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.dependency}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          {task.risk}
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          <Box width="100%">
+            <Progress
+              height="5px"
+              width={`${task.progress}%`}
+              backgroundColor={
+                task.progress < 30
+                  ? "red.400"
+                  : task.progress < 70
+                  ? "yellow.400"
+                  : "green.400"
+              }
+              borderRadius="md"
+            />
+          </Box>
+        </Td>
+        <Td
+          borderColor="gray.200"
+          borderRightWidth="1px"
+          textAlign="center"
+          minWidth="20px"
+          cursor="pointer"
+          color="blue.500"
+          _hover={{ color: "blue.600", transform: "scale(1.3)" }}
+        >
+          <FontAwesomeIcon
+            icon={faPlus}
+            onClick={() => handleAddTaskClick(task.id)}
+            size="sm"
+          />
+        </Td>
+      </Tr>
+      {/* Render Subtasks if the task is expanded */}
+      {expandedTaskIds.has(task.id) &&
+        task.subtasks &&
+        task.subtasks.map((subtask) => renderTaskRows(subtask, level + 1))}
+    </React.Fragment>
+  );
+
+  return (
+    <Box width={width} p={2} overflowY="auto" height="100vh">
+      <Flex gap={5}>
+        <Text fontSize="xl" fontWeight="bold" mb={4}>
+          Task Details
+        </Text>
+        <Button
+          onClick={() => handleAddTaskClick()}
+          bg="teal.500"
+          color="white"
+          size="sm"
+          fontWeight="bold"
+          borderRadius="md"
+          _hover={{
+            bg: "teal.600",
+            transform: "scale(1.05)",
+          }}
+          _active={{
+            bg: "teal.700",
+            transform: "scale(1.02)",
+          }}
+        >
+          + Add Task
+        </Button>
+      </Flex>
+
+      <Table
+        border={"1px"}
+        borderColor={"gray.200"}
+        variant="simple"
+        colorScheme="gray"
+      >
+        <Thead>
+          <Tr fontSize="5px">
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"80px"}
+            >
+              WBS
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"80px"}
+            >
+              Stage
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
+              height={`${
+                zoomLevel === "weeks"
+                  ? "39px"
+                  : `${zoomLevel === "days" ? "21px" : "83px"}`
+              }`}
+            >
+              Task Name
+            </Th>
+
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"160px"}
+            >
+              Planned Start
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"160px"}
+            >
+              Planned End
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
+            >
+              Actual Start
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
+            >
+              Actual End
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
+            >
+              Duration
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"150px"}
+            >
+              Dependency
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"120px"}
+            >
+              Risk
+            </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"120px"}
+            >
+              Progress
+            </Th>
+
+            <Th
+              borderColor="gray.200"
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth="20px"
+              cursor="pointer"
+              color="blue.500"
+              _hover={{ color: "blue.600", transform: "scale(1.3)" }}
+            >
+              <FontAwesomeIcon
+                onClick={() => handleAddTaskClick()}
+                icon={faPlus}
+                size="lg"
+              />
+            </Th>
+          </Tr>
+        </Thead>
+        <Tbody>{tasks.map((task) => renderTaskRows(task))}</Tbody>
+      </Table>
+
+      <Modal isOpen={isModalOpen} onClose={handleCloseModal} size="lg">
+        <ModalOverlay />
+        <ModalContent minWidth={650} borderRadius="md" boxShadow="xl">
+          <ModalHeader
+            fontSize="lg"
+            fontWeight="semibold"
+            color="teal.600"
+            fontFamily="'Inter', sans-serif"
+          >
+            Add New Task
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody pb={6} fontFamily="'Inter', sans-serif">
+            <FormControl id="taskName" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Task Name
+              </FormLabel>
+              <Input
+                value={newTask.name}
+                onChange={handleInputChange}
+                name="name"
+                placeholder="Enter task name"
+                fontSize="sm"
+                p={3}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              />
+            </FormControl>
+
+            <FormControl mt={3} id="risk" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Type
+              </FormLabel>
+              <Select
+                value={newTask.type}
+                onChange={handleTypeChange}
+                name="risk"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="task">task</option>
+                <option value="project">project</option>
+                <option value="milestone">milestone</option>
+              </Select>
+            </FormControl>
+
+            <FormControl mt={5} id="planned" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Planned
+              </FormLabel>
+              <Flex justify="space-between" align="center" mt={3}>
+                <Box flex="1" mr={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    Start
+                  </FormLabel>
+                  <Input
+                    type="date"
+                    value={newTask.plannedStart}
+                    onChange={handleInputChange}
+                    name="plannedStart"
+                    fontSize="sm"
+                    p={3}
+                    borderColor="gray.300"
+                    _hover={{ borderColor: "teal.500" }}
+                    _focus={{ borderColor: "teal.500" }}
+                  />
+                </Box>
+
+                <Box flex="1" mx={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    Duration (in days)
+                  </FormLabel>
+                  <Flex alignItems="center" justify="center">
+                    <Button
+                      onClick={() => handleDurationChange(-1)}
+                      fontSize="sm"
+                      variant="outline"
+                      colorScheme="teal"
+                      _hover={{ bg: "teal.100" }}
+                    >
+                      -
+                    </Button>
+                    <Text mx={3} fontSize="sm" fontWeight="semibold">
+                      {newTask.duration} days
+                    </Text>
+                    <Button
+                      onClick={() => handleDurationChange(1)}
+                      fontSize="sm"
+                      variant="outline"
+                      colorScheme="teal"
+                      _hover={{ bg: "teal.100" }}
+                    >
+                      +
+                    </Button>
+                  </Flex>
+                </Box>
+
+                <Box flex="1" ml={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    End
+                  </FormLabel>
+                  <Input
+                    type="date"
+                    value={newTask.plannedEnd}
+                    isReadOnly
+                    disabled
+                    fontSize="sm"
+                    p={3}
+                    borderColor="gray.300"
+                    _focus={{ borderColor: "gray.300" }}
+                  />
+                </Box>
+              </Flex>
+            </FormControl>
+
+            <FormControl mt={5} id="actual" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Actual
+              </FormLabel>
+              <Flex justify="space-between" align="center" mt={3}>
+                <Box flex="1" mr={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    Start
+                  </FormLabel>
+                  <Input
+                    type="date"
+                    value={newTask.actualStart}
+                    onChange={handleInputChange}
+                    name="actualStart"
+                    fontSize="sm"
+                    p={3}
+                    borderColor="gray.300"
+                    _hover={{ borderColor: "teal.500" }}
+                    _focus={{ borderColor: "teal.500" }}
+                  />
+                </Box>
+
+                <Box flex="1" mx={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    Duration (in days)
+                  </FormLabel>
+                  <Flex alignItems="center" justify="center">
+                    <Button
+                      onClick={() => handleActualDurationChange(-1)}
+                      fontSize="sm"
+                      variant="outline"
+                      colorScheme="teal"
+                      _hover={{ bg: "teal.100" }}
+                    >
+                      -
+                    </Button>
+                    <Text mx={3} fontSize="sm" fontWeight="semibold">
+                      {newTask.actualDuration} days
+                    </Text>
+                    <Button
+                      onClick={() => handleActualDurationChange(1)}
+                      fontSize="sm"
+                      variant="outline"
+                      colorScheme="teal"
+                      _hover={{ bg: "teal.100" }}
+                    >
+                      +
+                    </Button>
+                  </Flex>
+                </Box>
+
+                <Box flex="1" ml={2}>
+                  <FormLabel textAlign="center" fontSize="xs">
+                    End
+                  </FormLabel>
+                  <Input
+                    type="date"
+                    value={newTask.actualEnd}
+                    isReadOnly
+                    disabled
+                    fontSize="sm"
+                    p={3}
+                    borderColor="gray.300"
+                    _focus={{ borderColor: "gray.300" }}
+                  />
+                </Box>
+              </Flex>
+            </FormControl>
+
+            <FormControl mt={5} id="dependency" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Dependency
+              </FormLabel>
+              <Input
+                value={newTask.dependency}
+                onChange={handleInputChange}
+                name="dependency"
+                placeholder="Dependency task"
+                fontSize="sm"
+                p={3}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              />
+            </FormControl>
+
+            <FormControl mt={3} id="role" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Role
+              </FormLabel>
+              <Select
+                value={newTask.role}
+                onChange={handleRoleChange}
+                name="role"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="coordinator">Coordinator</option>
+                <option value="manager">Manager</option>
+                <option value="user">User</option>
+              </Select>
+            </FormControl>
+
+            <FormControl mt={3} id="stage" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Stage
+              </FormLabel>
+              <Select
+                value={newTask.stage}
+                onChange={handleStageChange}
+                name="stage"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="DR-1">DR-1</option>
+                <option value="DR-2">DR-2</option>
+                <option value="DR`">DR-3</option>
+              </Select>
+            </FormControl>
+
+            <FormControl mt={3} id="status" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Status
+              </FormLabel>
+              <Select
+                value={newTask.status}
+                onChange={handleStausChange}
+                name="status"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="Not-started">Not Started</option>
+                <option value="In-progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="delay">Delay</option>
+              </Select>
+            </FormControl>
+
+            <FormControl mt={3} id="risk" isRequired>
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Risk Level
+              </FormLabel>
+              <Select
+                value={newTask.risk}
+                onChange={handleRiskChange}
+                name="risk"
+                fontSize="sm"
+                p={1}
+                borderColor="gray.300"
+                _hover={{ borderColor: "teal.500" }}
+                _focus={{ borderColor: "teal.500" }}
+              >
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+              </Select>
+            </FormControl>
+
+            <FormControl mt={5} id="progress">
+              <FormLabel fontSize="sm" fontWeight="medium">
+                Progress
+              </FormLabel>
+              <Box position="relative" onMouseMove={handleSliderMouseMove}>
+                <Slider
+                  value={newTask.progress}
+                  onChange={handleProgressChange}
+                  min={0}
+                  max={100}
+                  step={1}
+                  aria-label="Progress slider"
+                  size="sm"
+                >
+                  <SliderTrack>
+                    <SliderFilledTrack />
+                  </SliderTrack>
+                  <SliderThumb />
+                </Slider>
+                <Box
+                  ref={tooltipRef}
+                  position="absolute"
+                  top={-2}
+                  left={90}
+                  transform="translateX(-50%) translateY(-100%)"
+                  bg="gray.700"
+                  color="white"
+                  height={7}
+                  width={7}
+                  borderRadius="50%"
+                  padding="4px"
+                  py={2}
+                  textAlign="center"
+                  fontSize="9px"
+                  opacity={newTask.progress === 0 ? 0 : 1}
+                >
+                  {Math.round(newTask.progress)}%
+                </Box>
+              </Box>
+            </FormControl>
+          </ModalBody>
+
+          <ModalFooter justifyContent="space-between">
+            <Flex gap={2}>
+              <Button
+                colorScheme="teal"
+                onClick={editingTaskId ? handleUpdateTask : handleSaveTask}
+                fontSize="md"
+              >
+                {editingTaskId ? "Update Task" : "Save Task"}
+              </Button>
+              <Button variant="ghost" onClick={handleCloseModal} fontSize="sm">
+                Cancel
+              </Button>
+            </Flex>
+            {editingTaskId && (
+              <Button
+                colorScheme="red"
+                onClick={handleDeleteTask}
+                fontSize="sm"
+              >
+                Delete Task
+              </Button>
+            )}
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+    </Box>
+  );
+};
