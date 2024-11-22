@@ -822,9 +822,13 @@ const TaskListPanel: React.FC<{
                   e.stopPropagation();
                   toggleExpandedTask(task.id);
                 }}
-                style={{ marginRight: "8px", cursor: "pointer" }}
-                color="green"
+                style={{
+                  marginRight: "8px",
+                  cursor: "pointer",
+                  color: expandedTaskIds.has(task.id) ? "red" : "green", // Conditional color
+                }}
               />
+
               <FontAwesomeIcon
                 color={level === 0 ? "orange" : "blue"}
                 icon={expandedTaskIds.has(task.id) ? faFolderOpen : faFolder}
@@ -1440,7 +1444,7 @@ const TimelinePanel: React.FC<{
   } | null>(null);
 
   const [isEditMode, setIsEditMode] = useState(false);
-
+  const { expandedTaskIds, toggleExpandedTask } = useTaskContext();
   const toggleEditMode = () => {
     setIsEditMode((prev) => !prev);
   };
@@ -2155,6 +2159,105 @@ const TimelinePanel: React.FC<{
                     dateRange
                   );
 
+            const renderSubtasks = (subtasks: Task[], level = 1) => {
+              return subtasks.map((subtask) => {
+                const { position: subPlannedPosition, width: subPlannedWidth } =
+                  calculateBarPositionAndWidth(
+                    subtask.plannedStart,
+                    subtask.plannedEnd,
+                    minDate.toISOString(),
+                    maxDate.toISOString(),
+                    dateRange.length * 100,
+                    dateRange
+                  );
+
+                const { position: subActualPosition, width: subActualWidth } =
+                  calculateBarPositionAndWidth(
+                    subtask.actualStart,
+                    subtask.actualEnd,
+                    minDate.toISOString(),
+                    maxDate.toISOString(),
+                    dateRange.length * 100,
+                    dateRange
+                  );
+
+                return (
+                  <React.Fragment key={subtask.id}>
+                    <Tr bg="gray.50">
+                      <Td
+                        colSpan={dateRange.length}
+                        position="relative"
+                        height="60px"
+                        paddingLeft={`${level * 20}px`} // Indentation for subtasks
+                      >
+                        <Box
+                          position="absolute"
+                          top="50%"
+                          left={`${subPlannedPosition + 5}px`}
+                          transform="translateY(-50%)"
+                          width={`${subPlannedWidth}px`}
+                          bg="purple.400"
+                          height="14px"
+                          cursor={"pointer"}
+                          borderRadius="sm"
+                          onClick={(e) =>
+                            handleSubtaskBarClick(e, subtask, "planned")
+                          }
+                        >
+                          <Text
+                            position="absolute"
+                            top="10%"
+                            left="50%"
+                            transform="translateX(-50%) translateY(-20%)"
+                            color="white"
+                            fontWeight="bold"
+                            fontSize="xs"
+                          >
+                            {subtask.name}
+                          </Text>
+                        </Box>
+                        <DraggableOrStatic
+                          isEditMode={isEditMode}
+                          onStop={(e, data) => handleDragStop(subtask, data.x)}
+                        >
+                          <Box
+                            position="absolute"
+                            top={isEditMode ? "70%" : "80%"}
+                            left={`${subActualPosition + 5}px`}
+                            transform="translateY(-50%)"
+                            width={`${subActualWidth}px`}
+                            bg="yellow.400"
+                            height="14px"
+                            borderRadius="sm"
+                            cursor={"pointer"}
+                            onClick={(e) =>
+                              handleSubtaskBarClick(e, subtask, "actual")
+                            }
+                          >
+                            <Text
+                              position="absolute"
+                              top="10%"
+                              left="50%"
+                              transform="translateX(-50%) translateY(-20%)"
+                              color="white"
+                              fontWeight="bold"
+                              fontSize="xs"
+                            >
+                              {subtask.name}
+                            </Text>
+                          </Box>
+                        </DraggableOrStatic>
+                      </Td>
+                    </Tr>
+                    {/* Recursive call if subtask has subtasks and is expanded */}
+                    {expandedTaskIds.has(subtask.id) &&
+                      subtask.subtasks &&
+                      renderSubtasks(subtask.subtasks, level + 1)}
+                  </React.Fragment>
+                );
+              });
+            };
+
             return (
               <React.Fragment key={task.id}>
                 <Tr bg={selectedTaskId === task.id ? "blue.100" : "white"}>
@@ -2227,7 +2330,7 @@ const TimelinePanel: React.FC<{
                         top="0"
                         w="100%"
                         h="14px"
-                        value={task.inlineProgress}
+                        value={task.progress}
                         bg="blue.400"
                         borderRadius="sm"
                       />
@@ -2243,8 +2346,6 @@ const TimelinePanel: React.FC<{
                         {task.name}
                       </Text>
                     </Box>
-                    {/* Actual Bar */}
-
                     <DraggableOrStatic
                       isEditMode={isEditMode}
                       onStop={(e, data) => handleDragStop(task, data.x)}
@@ -2266,7 +2367,7 @@ const TimelinePanel: React.FC<{
                           top="0"
                           w="100%"
                           h="14px"
-                          value={task.inlineProgress}
+                          value={task.progress}
                           bg="green.400"
                           sx={{
                             bg: "green.400",
@@ -2292,123 +2393,10 @@ const TimelinePanel: React.FC<{
                     </DraggableOrStatic>
                   </Td>
                 </Tr>
-                {expandedTaskId === task.id &&
-                  task.subtasks?.map((subtask) => {
-                    const {
-                      position: subPlannedPosition,
-                      width: subPlannedWidth,
-                    } =
-                      zoomLevel === "years"
-                        ? calculateBarPositionAndWidth(
-                            subtask.plannedStart,
-                            subtask.plannedEnd,
-                            minDate.toISOString(),
-                            maxDate.toISOString(),
-                            dateRange.length * 100,
-                            dateRange,
-                            true
-                          )
-                        : calculateBarPositionAndWidth(
-                            subtask.plannedStart,
-                            subtask.plannedEnd,
-                            minDate.toISOString(),
-                            maxDate.toISOString(),
-                            dateRange.length * 100,
-                            dateRange
-                          );
-
-                    const {
-                      position: subActualPosition,
-                      width: subActualWidth,
-                    } =
-                      zoomLevel === "years"
-                        ? calculateBarPositionAndWidth(
-                            subtask.actualStart,
-                            subtask.actualEnd,
-                            minDate.toISOString(),
-                            maxDate.toISOString(),
-                            dateRange.length * 100,
-                            dateRange,
-                            true
-                          )
-                        : calculateBarPositionAndWidth(
-                            subtask.actualStart,
-                            subtask.actualEnd,
-                            minDate.toISOString(),
-                            maxDate.toISOString(),
-                            dateRange.length * 100,
-                            dateRange
-                          );
-
-                    return (
-                      <Tr key={subtask.id} bg="gray.50">
-                        <Td
-                          colSpan={dateRange.length}
-                          position="relative"
-                          height="60px"
-                        >
-                          <Box
-                            position="absolute"
-                            top="50%"
-                            left={`${subPlannedPosition + 5}px`}
-                            transform="translateY(-50%)"
-                            width={`${subPlannedWidth}px`}
-                            bg="purple.400"
-                            height="14px"
-                            cursor={"pointer"}
-                            borderRadius="sm"
-                            onClick={(e) =>
-                              handleSubtaskBarClick(e, subtask, "planned")
-                            }
-                          >
-                            <Text
-                              position="absolute"
-                              top="10%"
-                              left="50%"
-                              transform="translateX(-50%) translateY(-20%)"
-                              color="white"
-                              fontWeight="bold"
-                              fontSize="xs"
-                            >
-                              {subtask.name}
-                            </Text>
-                          </Box>
-                          <DraggableOrStatic
-                            isEditMode={isEditMode}
-                            onStop={(e, data) => handleDragStop(task, data.x)}
-                          >
-                            <Box
-                              position="absolute"
-                              top={isEditMode ? "70%" : "80%"}
-                              left={`${subActualPosition + 5}px`}
-                              transform="translateY(-50%)"
-                              width={`${subActualWidth}px`}
-                              bg="yellow.400"
-                              height="14px"
-                              borderRadius="sm"
-                              cursor={"pointer"}
-                              onClick={(e) =>
-                                handleSubtaskBarClick(e, subtask, "actual")
-                              }
-                            >
-                              {" "}
-                              <Text
-                                position="absolute"
-                                top="10%"
-                                left="50%"
-                                transform="translateX(-50%) translateY(-20%)"
-                                color="white"
-                                fontWeight="bold"
-                                fontSize="xs"
-                              >
-                                {subtask.name}
-                              </Text>
-                            </Box>
-                          </DraggableOrStatic>
-                        </Td>
-                      </Tr>
-                    );
-                  })}
+                {/* Render Subtasks */}
+                {expandedTaskIds.has(task.id) &&
+                  task.subtasks &&
+                  renderSubtasks(task.subtasks)}
               </React.Fragment>
             );
           })}
