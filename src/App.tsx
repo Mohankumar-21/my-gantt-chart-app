@@ -130,26 +130,22 @@ const TaskListPanel: React.FC<{
 
   const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
     if (parentTaskId) {
-      // Editing a subtask
       const parentTask = tasks.find((t) => t.id === parentTaskId);
       const subtaskToEdit = parentTask?.subtasks?.find(
         (sub) => sub.id === task.id
       );
       if (subtaskToEdit) {
         setNewTask({ ...subtaskToEdit });
-        setEditingTaskId(task.id); // Set editing task ID for subtask
+        setEditingTaskId(task.id);
       }
     } else {
       // Editing a parent task
       setNewTask({ ...task });
-      setEditingTaskId(task.id); // Set editing task ID for parent task
+      setEditingTaskId(task.id);
     }
     setIsModalOpen(true); // Open modal
   };
 
-  // const toggleSubtasks = (taskId: string) => {
-  //   setExpandedTaskId(expandedTaskId === taskId ? null : taskId);
-  // };
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({
     x: 0,
     y: 0,
@@ -1998,56 +1994,6 @@ const TimelinePanel: React.FC<{
     return null;
   };
 
-  const renderDependencies = (tasks: Task[], timelineWidth: number) => {
-    const lines: React.ReactNode[] = [];
-    tasks.forEach((task) => {
-      if (!task.dependencies) return;
-
-      task.dependencies.forEach((dependency) => {
-        const dependentTask = tasks.find((t) => t.id === dependency.taskId);
-        if (!dependentTask) return;
-
-        const taskPosition = calculateBarPositionAndWidth(
-          task.plannedStart,
-          task.plannedEnd,
-          minDate.toISOString(),
-          maxDate.toISOString(),
-          timelineWidth,
-          dateRange
-        );
-        const dependentTaskPosition = calculateBarPositionAndWidth(
-          dependentTask.plannedStart,
-          dependentTask.plannedEnd,
-          minDate.toISOString(),
-          maxDate.toISOString(),
-          timelineWidth,
-          dateRange
-        );
-
-        const startX = taskPosition.position + taskPosition.width;
-        const startY = 50 + 60 * tasks.findIndex((t) => t.id === task.id); // Vertical position
-        const endX = dependentTaskPosition.position;
-        const endY =
-          50 + 60 * tasks.findIndex((t) => t.id === dependentTask.id); // Vertical position
-
-        lines.push(
-          <line
-            key={`${task.id}-${dependency.taskId}`}
-            x1={startX}
-            y1={startY}
-            x2={endX}
-            y2={endY}
-            stroke="gray"
-            strokeWidth={2}
-            markerEnd="url(#arrowhead)"
-          />
-        );
-      });
-    });
-
-    return lines;
-  };
-
   const DraggableOrStatic: React.FC<{
     isEditMode: boolean;
     children: React.ReactNode;
@@ -2183,12 +2129,14 @@ const TimelinePanel: React.FC<{
 
                 return (
                   <React.Fragment key={subtask.id}>
-                    <Tr bg="gray.50">
+                    <Tr
+                      bg={selectedTaskId === subtask.id ? "blue.100" : "white"}
+                    >
                       <Td
                         colSpan={dateRange.length}
                         position="relative"
                         height="60px"
-                        paddingLeft={`${level * 20}px`} // Indentation for subtasks
+                        paddingLeft={`${level * 20}px`}
                       >
                         <Box
                           position="absolute"
@@ -2204,6 +2152,22 @@ const TimelinePanel: React.FC<{
                             handleSubtaskBarClick(e, subtask, "planned")
                           }
                         >
+                          <Progress
+                            position="absolute"
+                            top="0"
+                            w="100%"
+                            h="14px"
+                            value={subtask.progress}
+                            bg="purple.400"
+                            sx={{
+                              bg: "purple.400",
+                              "& > div": {
+                                backgroundColor: "purple.600",
+                                borderRadius: "sm",
+                              },
+                            }}
+                            borderRadius="sm"
+                          />
                           <Text
                             position="absolute"
                             top="10%"
@@ -2234,6 +2198,70 @@ const TimelinePanel: React.FC<{
                               handleSubtaskBarClick(e, subtask, "actual")
                             }
                           >
+                            {isEditMode && (
+                              <svg
+                                width="20"
+                                height="20"
+                                style={{
+                                  position: "absolute",
+                                  left: "-7px",
+                                  top: "50%",
+                                  transform: "translate(-50%, -50%)",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <circle
+                                  cx="10"
+                                  cy="10"
+                                  r="5"
+                                  stroke="gray"
+                                  fill="white"
+                                  onMouseDown={(e) =>
+                                    handleCircleDragStart(e, task, "start")
+                                  }
+                                />
+                              </svg>
+                            )}
+                            {isEditMode && (
+                              <svg
+                                width="20"
+                                height="20"
+                                style={{
+                                  position: "absolute",
+                                  right: "-10px",
+                                  top: "50%",
+                                  transform: "translate(50%, -50%)",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <circle
+                                  cx="7"
+                                  cy="10"
+                                  r="5"
+                                  stroke="gray"
+                                  fill="white"
+                                  onMouseDown={(e) =>
+                                    handleCircleDragStart(e, task, "end")
+                                  }
+                                />
+                              </svg>
+                            )}
+                            <Progress
+                              position="absolute"
+                              top="0"
+                              w="100%"
+                              h="14px"
+                              value={subtask.progress}
+                              bg="yellow.400"
+                              sx={{
+                                bg: "yellow.400",
+                                "& > div": {
+                                  backgroundColor: "yellow.500",
+                                  borderRadius: "sm",
+                                },
+                              }}
+                              borderRadius="sm"
+                            />
                             <Text
                               position="absolute"
                               top="10%"
@@ -2279,52 +2307,6 @@ const TimelinePanel: React.FC<{
                       borderRadius="sm"
                       onClick={(e) => handleBarClick(e, task, "planned")}
                     >
-                      {isEditMode && (
-                        <svg
-                          width="20"
-                          height="20"
-                          style={{
-                            position: "absolute",
-                            left: "-7px",
-                            top: "50%",
-                            transform: "translate(-50%, -50%)",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <circle
-                            cx="10"
-                            cy="10"
-                            r="5"
-                            fill="gray"
-                            onMouseDown={(e) =>
-                              handleCircleDragStart(e, task, "start")
-                            }
-                          />
-                        </svg>
-                      )}
-                      {isEditMode && (
-                        <svg
-                          width="20"
-                          height="20"
-                          style={{
-                            position: "absolute",
-                            right: "-10px",
-                            top: "50%",
-                            transform: "translate(50%, -50%)",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <circle
-                            cx="7"
-                            cy="10"
-                            r="5"
-                            fill="gray"
-                            onMouseDown={(e) =>
-                              handleCircleDragStart(e, task, "end")
-                            }
-                          />
-                        </svg>
-                      )}
                       <Progress
                         position="absolute"
                         top="0"
@@ -2362,6 +2344,54 @@ const TimelinePanel: React.FC<{
                         borderRadius="sm"
                         onClick={(e) => handleBarClick(e, task, "actual")}
                       >
+                        {isEditMode && (
+                          <svg
+                            width="20"
+                            height="20"
+                            style={{
+                              position: "absolute",
+                              left: "-7px",
+                              top: "50%",
+                              transform: "translate(-50%, -50%)",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <circle
+                              cx="10"
+                              cy="10"
+                              r="5"
+                              stroke="gray"
+                              fill="white"
+                              onMouseDown={(e) =>
+                                handleCircleDragStart(e, task, "start")
+                              }
+                            />
+                          </svg>
+                        )}
+                        {isEditMode && (
+                          <svg
+                            width="20"
+                            height="20"
+                            style={{
+                              position: "absolute",
+                              right: "-10px",
+                              top: "50%",
+                              transform: "translate(50%, -50%)",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <circle
+                              cx="7"
+                              cy="10"
+                              r="5"
+                              stroke="gray"
+                              fill="white"
+                              onMouseDown={(e) =>
+                                handleCircleDragStart(e, task, "end")
+                              }
+                            />
+                          </svg>
+                        )}
                         <Progress
                           position="absolute"
                           top="0"
@@ -2393,7 +2423,7 @@ const TimelinePanel: React.FC<{
                     </DraggableOrStatic>
                   </Td>
                 </Tr>
-                {/* Render Subtasks */}
+
                 {expandedTaskIds.has(task.id) &&
                   task.subtasks &&
                   renderSubtasks(task.subtasks)}
