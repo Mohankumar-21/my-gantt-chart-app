@@ -1435,9 +1435,248 @@ const TimelinePanel: React.FC<{
   setTask,
 }) => {
   const [draggingConnection, setDraggingConnection] = useState<{
-    taskId: string;
+    fromId: string;
+    startX: number;
+    startY: number;
+    endX?: number; // Make it optional to handle initialization
+    endY?: number; // Make it optional to handle initialization
     point: "start" | "end";
   } | null>(null);
+
+  const [mousePosition, setMousePosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const [connections, setConnections] = useState<
+    {
+      fromId: string;
+      toId: string;
+      startX: number;
+      startY: number;
+      endX: number;
+      endY: number;
+    }[]
+  >([]);
+
+  console.log("Connections:", connections);
+
+  const handleCircleDragStart = (
+    e: React.MouseEvent<SVGCircleElement>,
+    taskId: string,
+    point: "start" | "end"
+  ) => {
+    const circle = e.currentTarget.getBoundingClientRect();
+    const svg = timelineRef.current?.getBoundingClientRect();
+  
+    if (svg) {
+      const startX = circle.x - svg.x + circle.width / 2; // Adjust to circle center
+      const startY = circle.y - svg.y + circle.height / 2;
+  
+      setDraggingConnection({
+        fromId: taskId,
+        startX,
+        startY,
+        point,
+      });
+    }
+  };
+  
+  const handleCircleDragEnd = (
+    e: React.MouseEvent<SVGCircleElement>,
+    toId: string
+  ) => {
+    if (draggingConnection) {
+      const circle = e.currentTarget.getBoundingClientRect(); // Get target circle
+      const svg = timelineRef.current?.getBoundingClientRect();
+  
+      if (svg) {
+        const endX = circle.x - svg.x + circle.width / 2; // Adjust to circle center
+        const endY = circle.y - svg.y + circle.height / 2;
+  
+        setConnections((prev) => [
+          ...prev,
+          {
+            fromId: draggingConnection.fromId,
+            toId,
+            startX: draggingConnection.startX,
+            startY: draggingConnection.startY,
+            endX,
+            endY,
+          },
+        ]);
+      }
+    }
+  
+    setDraggingConnection(null);
+  };
+  
+  
+
+  
+
+  const handleMouseMove = (coords: { clientX: number; clientY: number }) => {
+    if (draggingConnection) {
+      const svg = timelineRef.current?.getBoundingClientRect();
+  
+      if (svg) {
+        const endX = coords.clientX - svg.x;
+        const endY = coords.clientY - svg.y;
+  
+        setDraggingConnection((prev) =>
+          prev ? { ...prev, endX, endY } : null
+        );
+      }
+    }
+  };
+  
+
+  useEffect(() => {
+    const handleMouseUp = () => setDraggingConnection(null);
+  
+    const nativeMouseMoveHandler = (e: MouseEvent) => {
+      handleMouseMove({
+        clientX: e.clientX,
+        clientY: e.clientY,
+      });
+    };
+  
+    if (draggingConnection) {
+      window.addEventListener("mousemove", nativeMouseMoveHandler);
+      window.addEventListener("mouseup", handleMouseUp);
+    }
+  
+    return () => {
+      window.removeEventListener("mousemove", nativeMouseMoveHandler);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [draggingConnection]);
+  
+
+  
+
+  const calculateIntermediatePoints = (startX: number, startY: number, endX: number, endY: number) => {
+    const waypoints = [[startX, startY]]; // Start point
+  
+    // Example logic for intermediate waypoints (adjust based on actual layout):
+    if (Math.abs(endX - startX) > 50) {
+      // If there's a horizontal distance, add a waypoint to navigate around obstacles
+      const midX = (startX + endX) / 2;
+      waypoints.push([midX, startY]); // Go horizontally
+      waypoints.push([midX, endY]); // Then vertically
+    }
+  
+    waypoints.push([endX, endY]); // End point
+    return waypoints;
+  };
+  
+
+  const getConnectionType = (fromX: number, fromY: number, toX: number, toY: number) => {
+    if (fromX < toX && fromY === toY) return "straight"; // Straight horizontal
+    if (fromX === toX && fromY < toY) return "vertical"; // Straight vertical
+    if (fromX < toX && fromY < toY) return "L-shape"; // L-shaped
+    if (fromX > toX && fromY < toY) return "reverse-L"; // Reverse L-shaped
+    if (fromX > toX && fromY > toY) return "zigzag"; // Zigzag for end-to-start
+    return "complex"; // Any other complex case
+  };
+  
+
+  
+
+  const calculateArrowPath = (
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    type: string,
+    offset = 10 ,// Offset to avoid bars
+    circleRadius = 5
+  ) => {
+    switch (type) {
+      case "straight":
+        console.log("Straight:", startX, startY, endX, endY);
+        return `M ${startX},${startY - offset} L ${endX},${endY - offset}`;
+      case "vertical":
+        console.log("Vertical:", startX, startY, endX, endY);
+        return `M ${startX},${startY - offset} L ${startX},${endY + offset}`;
+        case "L-shape": {
+          // Adjust startY and endY to include the circle radius and a 1 cm adjustment
+          const adjustedStartY = startY + circleRadius - 5; // Move 1 cm above or below
+          const adjustedEndY = endY + circleRadius - 5; // Move 1 cm above or below
+          console.log("L-shape:", startX, adjustedStartY, endX, adjustedEndY);
+          return `M ${startX},${adjustedStartY} L ${startX},${adjustedEndY} L ${endX},${adjustedEndY}`;
+        }
+      case "reverse-L":
+        console.log("Reverse L:", startX, startY, endX, endY);
+        return `M ${startX},${startY - offset} L ${endX},${startY - offset} L ${endX},${endY - offset}`;
+      case "zigzag": {
+        console.log("Zigzag:", startX, startY, endX, endY);
+        const midX1 = startX - 20; // First horizontal line back
+        const midY = (startY + endY) / 2; // Midpoint vertically
+        const midX2 = endX + 20; // Second horizontal line forward
+        return `M ${startX},${startY-offset} L ${midX1},${startY - offset} L ${midX1},${midY} L ${midX2},${midY} L ${midX2},${endY + offset} L ${endX},${endY + offset}`;
+      }
+      case "complex": {
+        console.log("Complex:", startX, startY, endX, endY);
+        const complexMidX = (startX + endX) / 2;
+        const complexMidY = (startY + endY) / 2;
+        return `M ${startX},${startY - offset} L ${complexMidX},${startY - offset} L ${complexMidX},${complexMidY} L ${endX},${endY + offset}`;
+      }
+      default:
+        console.log("Default:", startX, startY, endX, endY);
+        return `M ${startX},${startY - offset} L ${endX},${endY - offset}`;
+    }
+  };
+  
+
+  
+
+  const renderConnections = () =>
+    connections.map((connection, index) => {
+      const { startX, startY, endX, endY } = connection;
+  
+      // Determine the connection type dynamically
+      const connectionType = getConnectionType(startX, startY, endX, endY);
+  
+      // Add a small offset to avoid bars and align with circle centers
+      const path = calculateArrowPath(startX, startY, endX, endY, connectionType, 10); // Offset is 10px
+  
+      return (
+        <path
+          key={index}
+          d={path}
+          fill="none"
+          stroke="orange"
+          strokeWidth={1}
+          markerEnd="url(#arrowhead)" // Arrowhead marker
+        />
+      );
+    });
+  
+
+
+  
+  
+  
+  
+
+  const renderTemporaryLine = () => {
+    if (!draggingConnection || draggingConnection.endX === undefined)
+      return null;
+
+    return (
+      <line
+        x1={draggingConnection.startX}
+        y1={draggingConnection.startY}
+        x2={draggingConnection.endX}
+        y2={draggingConnection.endY}
+        stroke="gray"
+        strokeWidth={2}
+        strokeDasharray="4"
+        markerEnd="url(#arrowhead)"
+      />
+    );
+  };
 
   const [isEditMode, setIsEditMode] = useState(false);
   const { expandedTaskIds, toggleExpandedTask } = useTaskContext();
@@ -1527,14 +1766,7 @@ const TimelinePanel: React.FC<{
       content: tooltipContent,
     });
   };
-  const handleCircleDragStart = (
-    e: React.MouseEvent<HTMLDivElement | SVGCircleElement, MouseEvent>,
-    task: Task,
-    point: "start" | "end"
-  ) => {
-    if (!isEditMode) return;
-    setDraggingConnection({ taskId: task.id, point });
-  };
+
   const closeTooltip = () => {
     setTooltipData(null);
   };
@@ -1639,18 +1871,84 @@ const TimelinePanel: React.FC<{
     setTimelineWidth(dateRange.length * 100); // Fixed width of 100px per cell
   }, [dateRange]);
 
+  const calculateCirclePosition = (task: Task, point: "start" | "end") => {
+    const barX = calculateBarPositionAndWidth(
+      task.actualStart,
+      task.actualEnd,
+      minDate.toISOString(),
+      maxDate.toISOString(),
+      timelineWidth,
+      dateRange
+    ).position;
+  
+    const barWidth = calculateBarPositionAndWidth(
+      task.actualStart,
+      task.actualEnd,
+      minDate.toISOString(),
+      maxDate.toISOString(),
+      timelineWidth,
+      dateRange
+    ).width;
+  
+    const barHeight = 14; // Bar height
+    const circleRadius = 5;
+  
+    if (point === "start") {
+      return {
+        x: barX - circleRadius,
+        y: barHeight / 2,
+      };
+    }
+  
+    if (point === "end") {
+      return {
+        x: barX + barWidth + circleRadius,
+        y: barHeight / 2,
+      };
+    }
+  
+    return { x: 0, y: 0 }; // Fallback
+  };
+  
+const updateConnections = (taskId: string, updatedTasks: Task[]) => {
+  setConnections((prevConnections) =>
+    prevConnections.map((connection) => {
+      if (connection.fromId === taskId || connection.toId === taskId) {
+        const fromTask = updatedTasks.find((t) => t.id === connection.fromId);
+        const toTask = updatedTasks.find((t) => t.id === connection.toId);
+
+        const fromPosition = fromTask
+          ? calculateCirclePosition(fromTask, "start")
+          : undefined;
+        const toPosition = toTask
+          ? calculateCirclePosition(toTask, "end")
+          : undefined;
+
+        if (fromPosition && toPosition) {
+          return {
+            ...connection,
+            startX: fromPosition.x,
+            startY: fromPosition.y,
+            endX: toPosition.x,
+            endY: toPosition.y,
+          };
+        }
+      }
+      return connection; // Return the original connection if no updates are needed
+    })
+  );
+};
+  
+
   const handleDragStop = (task: Task, dragX: number) => {
-    const totalTimelineWidth = timelineWidth;
     const timelineDuration =
-      new Date(maxDate).getTime() - new Date(minDate).getTime(); // Timeline duration in milliseconds
-
-    // Calculate the number of days moved based on drag distance
+      new Date(maxDate).getTime() - new Date(minDate).getTime();
     const daysMoved = Math.round(
-      (dragX / totalTimelineWidth) * (timelineDuration / (1000 * 60 * 60 * 24))
+      (dragX / timelineWidth) * (timelineDuration / (1000 * 60 * 60 * 24))
     );
-
-    setTask((prevTasks) =>
-      prevTasks.map((t) =>
+  
+    setTask((prevTasks) => {
+      const updatedTasks = prevTasks.map((t) =>
         t.id === task.id
           ? {
               ...t,
@@ -1662,9 +1960,14 @@ const TimelinePanel: React.FC<{
               ).toISOString(),
             }
           : t
-      )
-    );
+      );
+  
+      updateConnections(task.id, updatedTasks); // Update connections after dragging
+      return updatedTasks;
+    });
   };
+  
+  
 
   const calculateBarWidth = (
     taskStart: string,
@@ -2016,7 +2319,36 @@ const TimelinePanel: React.FC<{
       pt={1.5}
       overflowY="auto"
       height="100vh"
+      position="relative"
     >
+      <svg
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          zIndex: 0,
+          width: "100%",
+          height: "100%",
+        }}
+        onMouseMove={handleMouseMove} 
+      >
+        <defs>
+          <marker
+            id="arrowhead"
+            markerWidth="10"
+            markerHeight="7"
+            refX="0"
+            refY="3.5"
+            orient="auto"
+          >
+         <polygon points="0 0, 10 3.5, 0 7" fill="orange" />
+          </marker>
+        </defs>
+
+        {renderConnections()}
+        {renderTemporaryLine()}
+      </svg>
+
       {tooltipData && (
         <Box
           position="absolute"
@@ -2217,7 +2549,10 @@ const TimelinePanel: React.FC<{
                                   stroke="gray"
                                   fill="white"
                                   onMouseDown={(e) =>
-                                    handleCircleDragStart(e, task, "start")
+                                    handleCircleDragStart(e, task.id,"start")
+                                  }
+                                  onMouseUp={(e) =>
+                                    handleCircleDragEnd(e, subtask.id)
                                   }
                                 />
                               </svg>
@@ -2241,7 +2576,10 @@ const TimelinePanel: React.FC<{
                                   stroke="gray"
                                   fill="white"
                                   onMouseDown={(e) =>
-                                    handleCircleDragStart(e, task, "end")
+                                    handleCircleDragStart(e, task.id,"end")
+                                  }
+                                  onMouseUp={(e) =>
+                                    handleCircleDragEnd(e, subtask.id)
                                   }
                                 />
                               </svg>
@@ -2363,8 +2701,9 @@ const TimelinePanel: React.FC<{
                               stroke="gray"
                               fill="white"
                               onMouseDown={(e) =>
-                                handleCircleDragStart(e, task, "start")
+                                handleCircleDragStart(e, task.id,"start")
                               }
+                              onMouseUp={(e) => handleCircleDragEnd(e, task.id)}
                             />
                           </svg>
                         )}
@@ -2387,8 +2726,9 @@ const TimelinePanel: React.FC<{
                               stroke="gray"
                               fill="white"
                               onMouseDown={(e) =>
-                                handleCircleDragStart(e, task, "end")
+                                handleCircleDragStart(e, task.id,"end")
                               }
+                              onMouseUp={(e) => handleCircleDragEnd(e, task.id)}
                             />
                           </svg>
                         )}
