@@ -47,6 +47,7 @@ import {
   SliderFilledTrack,
   SliderThumb,
   Tooltip,
+  useDisclosure,
 } from "@chakra-ui/react";
 import { db } from "./firebase/firebaseconfig";
 import {
@@ -81,6 +82,13 @@ interface Task {
   dependencies?: { taskId: string; type: "FS" | "SS" | "FF" | "SF" }[];
 }
 
+interface Connection {
+  id: string;
+  sourceTaskId: string;
+  targetTaskId: string;
+  connectionType: "FS" | "SS" | "FF" | "SF"; // Connection type
+}
+
 const TaskContext = createContext<{
   expandedTaskIds: Set<string>;
   toggleExpandedTask: (taskId: string) => void;
@@ -106,6 +114,7 @@ const TaskListPanel: React.FC<{
   setTask,
 }) => {
   const toast = useToast();
+  const [isFocused, setIsFocused] = useState(false);
   const { expandedTaskIds, toggleExpandedTask } = useTaskContext();
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -157,10 +166,14 @@ const TaskListPanel: React.FC<{
       const startDate = new Date(newTask.plannedStart);
       startDate.setDate(startDate.getDate() + newTask.duration);
       const plannedEndDate = startDate.toISOString().split("T")[0];
-
       setNewTask((prev) => ({
         ...prev,
         plannedEnd: plannedEndDate,
+      }));
+    }else if (newTask.duration === 0 || newTask.duration === null) {
+      setNewTask((prev) => ({
+        ...prev,
+        plannedEnd: "", // Reset plannedEnd to default state
       }));
     }
   }, [newTask.plannedStart, newTask.duration]);
@@ -174,6 +187,12 @@ const TaskListPanel: React.FC<{
       setNewTask((prev) => ({
         ...prev,
         actualEnd: actualEndDate,
+      }));
+    }
+    else if (newTask.actualDuration === 0 || newTask.actualDuration === null) {
+      setNewTask((prev) => ({
+        ...prev,
+        actualEnd: "", // Reset plannedEnd to default state
       }));
     }
   }, [newTask.actualStart, newTask.actualDuration]);
@@ -235,6 +254,18 @@ const TaskListPanel: React.FC<{
     }));
   };
   const handleDurationChange = (change: number) => {
+
+    if (!newTask.plannedStart) {
+      toast({
+        title: "Validation Error",
+        description: "Planned Start Date must be selected first.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
     setNewTask((prev) => {
       const newDuration = prev.duration + change;
       return {
@@ -244,7 +275,44 @@ const TaskListPanel: React.FC<{
     });
   };
 
+  const handleDurationInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!newTask.plannedStart) {
+      toast({
+        title: "Validation Error",
+        description: "Planned Start Date must be selected first.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+  
+    const value = e.target.value.slice(0, 6);
+    const parsedValue = value.trim() === "" ? null : parseInt(value, 10);
+  
+    setNewTask((prev) => ({
+      ...prev,
+      duration: parsedValue === null || isNaN(parsedValue) ? 0 : Math.max(parsedValue, 0),
+    }));
+  };
+  
+  
+
   const handleActualDurationChange = (change: number) => {
+
+    if (!newTask.actualStart) {
+      toast({
+        title: "Validation Error",
+        description: "Actual Start Date must be selected first.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
     setNewTask((prev) => {
       const newDuration = (prev.actualDuration || 0) + change;
       return {
@@ -252,6 +320,29 @@ const TaskListPanel: React.FC<{
         actualDuration: Math.max(newDuration, 0),
       };
     });
+  };
+
+
+  const handleActualDurationInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!newTask.actualStart) {
+      toast({
+        title: "Validation Error",
+        description: "Actual Start Date must be selected first.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+  
+    const value = e.target.value.slice(0, 6);
+    const parsedValue = value.trim() === "" ? null : parseInt(value, 10);
+  
+    setNewTask((prev) => ({
+      ...prev,
+      actualDuration: parsedValue === null || isNaN(parsedValue) ? 0 : Math.max(parsedValue, 0),
+    }));
   };
 
   const handleRiskChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -339,11 +430,48 @@ const TaskListPanel: React.FC<{
   }, []);
 
   const handleSaveTask = async () => {
-    if (!newTask.name || !newTask.plannedStart || !newTask.plannedEnd) {
+    if (
+      !newTask.name ||
+      !newTask.plannedStart ||
+      !newTask.plannedEnd ||
+      !newTask.actualStart ||
+      !newTask.type ||
+      !newTask.role ||
+      !newTask.stage ||
+      !newTask.status ||
+      !newTask.risk ||
+      !newTask.progress
+    ) {
       toast({
         title: "Validation Error",
         description: "Please fill in all required fields.",
         status: "warning",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    if (new Date(newTask.actualStart) < new Date(newTask.plannedStart)) {
+      toast({
+        title: "Validation Error",
+        description:
+          "Actual Start date cannot be earlier than Planned Start date.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    // Validation for plannedEnd being after plannedStart
+    if (new Date(newTask.plannedEnd) <= new Date(newTask.plannedStart)) {
+      toast({
+        title: "Validation Error",
+        description: "Planned End date must be later than Planned Start date.",
+        status: "error",
         duration: 3000,
         isClosable: true,
         position: "top",
@@ -463,11 +591,46 @@ const TaskListPanel: React.FC<{
   };
 
   const handleUpdateTask = async () => {
-    if (!newTask.name || !newTask.plannedStart || !newTask.plannedEnd) {
+    if (
+      !newTask.name ||
+      !newTask.plannedStart ||
+      !newTask.plannedEnd ||
+      !newTask.actualStart ||
+      !newTask.type ||
+      !newTask.role ||
+      !newTask.stage ||
+      !newTask.status ||
+      !newTask.risk
+    ) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields.",
+        description: "All fields are required.",
         status: "warning",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    if (new Date(newTask.actualStart) < new Date(newTask.plannedStart)) {
+      toast({
+        title: "Validation Error",
+        description:
+          "Actual Start date cannot be earlier than Planned Start date.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    if (new Date(newTask.plannedEnd) <= new Date(newTask.plannedStart)) {
+      toast({
+        title: "Validation Error",
+        description: "Planned End date must be later than Planned Start date.",
+        status: "error",
         duration: 3000,
         isClosable: true,
         position: "top",
@@ -1084,6 +1247,7 @@ const TaskListPanel: React.FC<{
                 placeholder="Enter task name"
                 fontSize="sm"
                 p={3}
+                required
                 borderColor="gray.300"
                 _hover={{ borderColor: "teal.500" }}
                 _focus={{ borderColor: "teal.500" }}
@@ -1146,9 +1310,22 @@ const TaskListPanel: React.FC<{
                     >
                       -
                     </Button>
-                    <Text mx={3} fontSize="sm" fontWeight="semibold">
-                      {newTask.duration} days
-                    </Text>
+                    <Input
+                      type="number"
+                      value={newTask.duration === 0 && !isFocused ? "0" : newTask.duration || ""}
+                      onChange={handleDurationInputChange}
+                      onFocus={() => setIsFocused(true)}
+                      onBlur={() => setIsFocused(false)}
+                      mx={3}
+                      maxLength={6}
+                      width="60px"
+                      textAlign="center"
+                      fontSize="sm"
+                      p={2}
+                      borderColor="gray.300"
+                      _hover={{ borderColor: "teal.500" }}
+                      _focus={{ borderColor: "teal.500" }}
+                    />
                     <Button
                       onClick={() => handleDurationChange(1)}
                       fontSize="sm"
@@ -1215,9 +1392,22 @@ const TaskListPanel: React.FC<{
                     >
                       -
                     </Button>
-                    <Text mx={3} fontSize="sm" fontWeight="semibold">
-                      {newTask.actualDuration} days
-                    </Text>
+                    <Input
+                      type="number"
+                      value={newTask.actualDuration === 0 && !isFocused ? "0" : newTask.actualDuration || ""}
+                      onChange={handleActualDurationInputChange}
+                      onFocus={() => setIsFocused(true)}
+                      onBlur={() => setIsFocused(false)}
+                      mx={3}
+                      maxLength={6}
+                      width="60px"
+                      textAlign="center"
+                      fontSize="sm"
+                      p={2}
+                      borderColor="gray.300"
+                      _hover={{ borderColor: "teal.500" }}
+                      _focus={{ borderColor: "teal.500" }}
+                    />
                     <Button
                       onClick={() => handleActualDurationChange(1)}
                       fontSize="sm"
@@ -1434,6 +1624,55 @@ const TimelinePanel: React.FC<{
   tasks,
   setTask,
 }) => {
+  const [selectedConnection, setSelectedConnection] = useState<{
+    fromId: string;
+    toId: string;
+    fromTaskName: string;
+    toTaskName: string;
+  } | null>(null);
+
+  const { isOpen, onOpen, onClose } = useDisclosure();
+
+  const toast = useToast();
+  const getTaskNameById = (tasks: Task[], taskId: string): string | null => {
+    for (const task of tasks) {
+      if (task.id === taskId) {
+        return task.name; // Return the name if the ID matches
+      }
+      if (task.subtasks && task.subtasks.length > 0) {
+        const subtaskName = getTaskNameById(task.subtasks, taskId);
+        if (subtaskName) {
+          return subtaskName; // Return if found in subtasks
+        }
+      }
+    }
+    return null; // Return null if not found
+  };
+
+  const handleConnectionDoubleClick = (fromId: string, toId: string) => {
+    const fromTaskName = getTaskNameById(tasks, fromId) || "Unknown Task";
+    const toTaskName = getTaskNameById(tasks, toId) || "Unknown Task";
+
+    if (fromId && toId) {
+      setSelectedConnection({
+        fromId,
+        toId,
+        fromTaskName,
+        toTaskName,
+      });
+
+      onOpen();
+    } else {
+      console.warn("Invalid connection IDs:", { fromId, toId });
+      return;
+    }
+  };
+
+  const handleSaveConnection = () => {
+    console.log("Connection saved:", selectedConnection);
+    onClose(); // Close the modal after saving
+  };
+
   const [draggingConnection, setDraggingConnection] = useState<{
     fromId: string;
     startX: number;
@@ -1468,11 +1707,11 @@ const TimelinePanel: React.FC<{
   ) => {
     const circle = e.currentTarget.getBoundingClientRect();
     const svg = timelineRef.current?.getBoundingClientRect();
-  
+
     if (svg) {
-      const startX = circle.x - svg.x + circle.width / 2; // Adjust to circle center
-      const startY = circle.y - svg.y + circle.height / 2;
-  
+      const startX = circle.x - svg.x + circle.width / 2; // Center X
+      const startY = circle.y - svg.y + circle.height / 2; // Center Y
+
       setDraggingConnection({
         fromId: taskId,
         startX,
@@ -1481,20 +1720,30 @@ const TimelinePanel: React.FC<{
       });
     }
   };
-  
+
   const handleCircleDragEnd = (
     e: React.MouseEvent<SVGCircleElement>,
     toId: string
   ) => {
-    if (draggingConnection) {
-      const circle = e.currentTarget.getBoundingClientRect(); // Get target circle
-      const svg = timelineRef.current?.getBoundingClientRect();
-  
-      if (svg) {
-        const endX = circle.x - svg.x + circle.width / 2; // Adjust to circle center
-        const endY = circle.y - svg.y + circle.height / 2;
-  
-        setConnections((prev) => [
+    if (!draggingConnection) return; // No active drag connection
+
+    const circle = e.currentTarget.getBoundingClientRect(); // Get target circle
+    const svg = timelineRef.current?.getBoundingClientRect();
+
+    if (svg) {
+      const endX = circle.x - svg.x + circle.width / 2; // Center X
+      const endY = circle.y - svg.y + circle.height / 2; // Center Y
+
+      // Check for duplicate connections
+      setConnections((prev) => {
+        const exists = prev.some(
+          (conn) =>
+            conn.fromId === draggingConnection.fromId && conn.toId === toId
+        );
+        if (exists) return prev;
+
+        // Add the new connection
+        return [
           ...prev,
           {
             fromId: draggingConnection.fromId,
@@ -1504,60 +1753,57 @@ const TimelinePanel: React.FC<{
             endX,
             endY,
           },
-        ]);
-      }
+        ];
+      });
     }
-  
-    setDraggingConnection(null);
-  };
-  
-  
 
-  
+    setDraggingConnection(null); // Reset the temporary connection
+  };
 
   const handleMouseMove = (coords: { clientX: number; clientY: number }) => {
     if (draggingConnection) {
       const svg = timelineRef.current?.getBoundingClientRect();
-  
+
       if (svg) {
         const endX = coords.clientX - svg.x;
         const endY = coords.clientY - svg.y;
-  
+
         setDraggingConnection((prev) =>
           prev ? { ...prev, endX, endY } : null
         );
       }
     }
   };
-  
 
   useEffect(() => {
     const handleMouseUp = () => setDraggingConnection(null);
-  
+
     const nativeMouseMoveHandler = (e: MouseEvent) => {
       handleMouseMove({
         clientX: e.clientX,
         clientY: e.clientY,
       });
     };
-  
+
     if (draggingConnection) {
       window.addEventListener("mousemove", nativeMouseMoveHandler);
       window.addEventListener("mouseup", handleMouseUp);
     }
-  
+
     return () => {
       window.removeEventListener("mousemove", nativeMouseMoveHandler);
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [draggingConnection]);
-  
 
-  
-
-  const calculateIntermediatePoints = (startX: number, startY: number, endX: number, endY: number) => {
+  const calculateIntermediatePoints = (
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number
+  ) => {
     const waypoints = [[startX, startY]]; // Start point
-  
+
     // Example logic for intermediate waypoints (adjust based on actual layout):
     if (Math.abs(endX - startX) > 50) {
       // If there's a horizontal distance, add a waypoint to navigate around obstacles
@@ -1565,23 +1811,23 @@ const TimelinePanel: React.FC<{
       waypoints.push([midX, startY]); // Go horizontally
       waypoints.push([midX, endY]); // Then vertically
     }
-  
+
     waypoints.push([endX, endY]); // End point
     return waypoints;
   };
-  
 
-  const getConnectionType = (fromX: number, fromY: number, toX: number, toY: number) => {
-    if (fromX < toX && fromY === toY) return "straight"; // Straight horizontal
-    if (fromX === toX && fromY < toY) return "vertical"; // Straight vertical
-    if (fromX < toX && fromY < toY) return "L-shape"; // L-shaped
-    if (fromX > toX && fromY < toY) return "reverse-L"; // Reverse L-shaped
-    if (fromX > toX && fromY > toY) return "zigzag"; // Zigzag for end-to-start
-    return "complex"; // Any other complex case
+  const getConnectionType = (
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number
+  ) => {
+    if (fromX === toX) return "vertical"; // Perfect vertical line
+    if (fromY === toY) return "horizontal"; // Perfect horizontal line
+    if (fromX < toX) return "L-shape"; // L-shape connection
+    if (fromX > toX) return "reverse-L"; // Reverse L-shape connection
+    return "complex"; // Handle complex cases if none of the above
   };
-  
-
-  
 
   const calculateArrowPath = (
     startX: number,
@@ -1589,76 +1835,248 @@ const TimelinePanel: React.FC<{
     endX: number,
     endY: number,
     type: string,
-    offset = 10 ,// Offset to avoid bars
-    circleRadius = 5
+    offset = 10 // Offset to clear bars
   ) => {
     switch (type) {
-      case "straight":
-        console.log("Straight:", startX, startY, endX, endY);
-        return `M ${startX},${startY - offset} L ${endX},${endY - offset}`;
+      case "horizontal":
+        return `M ${startX},${startY} L ${endX},${endY}`; // Direct horizontal line
+
       case "vertical":
-        console.log("Vertical:", startX, startY, endX, endY);
-        return `M ${startX},${startY - offset} L ${startX},${endY + offset}`;
-        case "L-shape": {
-          // Adjust startY and endY to include the circle radius and a 1 cm adjustment
-          const adjustedStartY = startY + circleRadius - 5; // Move 1 cm above or below
-          const adjustedEndY = endY + circleRadius - 5; // Move 1 cm above or below
-          console.log("L-shape:", startX, adjustedStartY, endX, adjustedEndY);
-          return `M ${startX},${adjustedStartY} L ${startX},${adjustedEndY} L ${endX},${adjustedEndY}`;
-        }
-      case "reverse-L":
-        console.log("Reverse L:", startX, startY, endX, endY);
-        return `M ${startX},${startY - offset} L ${endX},${startY - offset} L ${endX},${endY - offset}`;
-      case "zigzag": {
-        console.log("Zigzag:", startX, startY, endX, endY);
-        const midX1 = startX - 20; // First horizontal line back
-        const midY = (startY + endY) / 2; // Midpoint vertically
-        const midX2 = endX + 20; // Second horizontal line forward
-        return `M ${startX},${startY-offset} L ${midX1},${startY - offset} L ${midX1},${midY} L ${midX2},${midY} L ${midX2},${endY + offset} L ${endX},${endY + offset}`;
+        return `M ${startX},${startY} L ${startX},${endY}`; // Direct vertical line
+
+      case "L-shape": {
+        const midX = startX; // Vertical first, then horizontal
+        return `M ${startX},${startY} L ${midX},${endY} L ${endX},${endY}`;
       }
+
+      case "reverse-L": {
+        const midX = endX; // Horizontal first, then vertical
+        return `M ${startX},${startY} L ${midX},${startY} L ${endX},${endY}`;
+      }
+
       case "complex": {
-        console.log("Complex:", startX, startY, endX, endY);
-        const complexMidX = (startX + endX) / 2;
-        const complexMidY = (startY + endY) / 2;
-        return `M ${startX},${startY - offset} L ${complexMidX},${startY - offset} L ${complexMidX},${complexMidY} L ${endX},${endY + offset}`;
+        const midX = (startX + endX) / 2; // Midpoint to create a smooth curve
+        const midY = (startY + endY) / 2;
+        return `M ${startX},${startY} Q ${midX},${midY} ${endX},${endY}`;
       }
+
       default:
-        console.log("Default:", startX, startY, endX, endY);
-        return `M ${startX},${startY - offset} L ${endX},${endY - offset}`;
+        return `M ${startX},${startY} L ${endX},${endY}`; // Fallback to direct line
     }
   };
-  
 
-  
+  const isVisible = (taskId: string): boolean => {
+    // Top-level tasks are always visible
+    if (!taskId.includes(".")) return true;
 
-  const renderConnections = () =>
-    connections.map((connection, index) => {
-      const { startX, startY, endX, endY } = connection;
-  
-      // Determine the connection type dynamically
-      const connectionType = getConnectionType(startX, startY, endX, endY);
-  
-      // Add a small offset to avoid bars and align with circle centers
-      const path = calculateArrowPath(startX, startY, endX, endY, connectionType, 10); // Offset is 10px
-  
+    // Check if any parent in the hierarchy is expanded
+    const parts = taskId.split(".");
+    for (let i = parts.length - 1; i > 0; i--) {
+      const parentId = parts.slice(0, i).join(".");
+      if (!expandedTaskIds.has(parentId)) {
+        // If a parent is collapsed, the task is not visible
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const saveConnectionsToFirebase = async (
+    connections: {
+      fromId: string;
+      toId: string;
+      startX: number;
+      startY: number;
+      endX: number;
+      endY: number;
+    }[]
+  ) => {
+    try {
+      const connectionsCollection = collection(db, "connections");
+
+      // Save each connection with a unique ID
+      const savePromises = connections.map((connection) =>
+        setDoc(
+          doc(connectionsCollection, `${connection.fromId}-${connection.toId}`),
+          connection
+        )
+      );
+
+      await Promise.all(savePromises);
+
+      console.log("Connections saved to Firebase successfully.");
+    } catch (error) {
+      console.error("Error saving connections to Firebase:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save connections to Firebase.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    }
+  };
+
+  const fetchConnectionsFromFirebase = async () => {
+    try {
+      const connectionsCollection = collection(db, "connections");
+      const snapshot = await getDocs(connectionsCollection);
+
+      const fetchedConnections = snapshot.docs.map((doc) => doc.data());
+
+      console.log("Fetched connections from Firebase:", fetchedConnections);
+
+      // Return connections in the desired format
+      return fetchedConnections.map((connection) => ({
+        fromId: connection.fromId,
+        toId: connection.toId,
+        startX: connection.startX,
+        startY: connection.startY,
+        endX: connection.endX,
+        endY: connection.endY,
+      }));
+    } catch (error) {
+      console.error("Error fetching connections from Firebase:", error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch connections from Firebase.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+      return [];
+    }
+  };
+
+  const handleDeleteConnection = async () => {
+    if (!selectedConnection) return;
+
+    try {
+      const connectionId = `${selectedConnection.fromId}-${selectedConnection.toId}`;
+      const connectionDoc = doc(db, "connections", connectionId);
+
+      // Delete the document from Firebase
+      await deleteDoc(connectionDoc);
+      setConnections((prevConnections) =>
+        prevConnections.filter(
+          (connection) =>
+            !(
+              connection.fromId === selectedConnection.fromId &&
+              connection.toId === selectedConnection.toId
+            )
+        )
+      );
+
+      setSelectedConnection(null);
+      onClose();
+
+      toast({
+        title: "Connection Deleted",
+        description: "The selected connection has been successfully deleted.",
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    } catch (error) {
+      console.error("Error deleting connection:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete the selected connection.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    }
+  };
+
+  const getVisibleConnections = () =>
+    connections.filter(({ fromId, toId }) => {
+      // Ensure both ends of the connection are visible
+      return isVisible(fromId) && isVisible(toId);
+    });
+  console.log("selected collections", selectedConnection);
+
+  useEffect(() => {
+    saveConnectionsToFirebase(connections);
+  }, [connections]);
+
+  useEffect(() => {
+    const loadConnections = async () => {
+      const fetchedConnections = await fetchConnectionsFromFirebase();
+      setConnections(fetchedConnections);
+    };
+
+    loadConnections();
+  }, []);
+
+  const calculatePath = (
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number
+  ) => {
+    if (startX < endX && startY > endY) {
+      // L-shaped line (start-to-end)
+      return `M ${startX},${startY} L ${startX},${endY} L ${endX},${endY}`;
+    } else if (startX > endX && startY < endY) {
+      // Reversed L-shaped line
+      return `M ${startX},${startY} L ${endX},${startY} L ${endX},${endY}`;
+    } else if (startX === endX || startY === endY) {
+      // Straight line
+      return `M ${startX},${startY} L ${endX},${endY}`;
+    } else {
+      // Zigzag line
+      const midX = (startX + endX) / 2;
+      return `M ${startX},${startY} L ${midX},${startY} L ${midX},${endY} L ${endX},${endY}`;
+    }
+  };
+
+  const renderConnections = () => {
+    const visibleConnections = getVisibleConnections();
+
+    return visibleConnections.map((connection, index) => {
+      const { startX, startY, endX, endY, fromId, toId } = connection;
+
+      if (
+        startX == null ||
+        startY == null ||
+        endX == null ||
+        endY == null ||
+        isNaN(startX) ||
+        isNaN(startY) ||
+        isNaN(endX) ||
+        isNaN(endY)
+      ) {
+        console.warn("Invalid connection coordinates:", connection);
+        return null;
+      }
+
+      const path = calculatePath(startX, startY, endX, endY);
+      console.log(`Path ${index}: ${path}`);
+
       return (
         <path
           key={index}
           d={path}
           fill="none"
           stroke="orange"
-          strokeWidth={1}
-          markerEnd="url(#arrowhead)" // Arrowhead marker
+          strokeWidth={2}
+          markerEnd="url(#arrowhead)"
+          pointerEvents="visibleStroke"
+          style={{ cursor: "pointer" }}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            handleConnectionDoubleClick(fromId, toId);
+          }}
         />
       );
     });
-  
-
-
-  
-  
-  
-  
+  };
 
   const renderTemporaryLine = () => {
     if (!draggingConnection || draggingConnection.endX === undefined)
@@ -1880,7 +2298,7 @@ const TimelinePanel: React.FC<{
       timelineWidth,
       dateRange
     ).position;
-  
+
     const barWidth = calculateBarPositionAndWidth(
       task.actualStart,
       task.actualEnd,
@@ -1889,85 +2307,162 @@ const TimelinePanel: React.FC<{
       timelineWidth,
       dateRange
     ).width;
-  
+
     const barHeight = 14; // Bar height
     const circleRadius = 5;
-  
+
     if (point === "start") {
       return {
         x: barX - circleRadius,
         y: barHeight / 2,
       };
     }
-  
+
     if (point === "end") {
       return {
         x: barX + barWidth + circleRadius,
         y: barHeight / 2,
       };
     }
-  
+
     return { x: 0, y: 0 }; // Fallback
   };
-  
-const updateConnections = (taskId: string, updatedTasks: Task[]) => {
-  setConnections((prevConnections) =>
-    prevConnections.map((connection) => {
-      if (connection.fromId === taskId || connection.toId === taskId) {
-        const fromTask = updatedTasks.find((t) => t.id === connection.fromId);
-        const toTask = updatedTasks.find((t) => t.id === connection.toId);
 
-        const fromPosition = fromTask
-          ? calculateCirclePosition(fromTask, "start")
-          : undefined;
-        const toPosition = toTask
-          ? calculateCirclePosition(toTask, "end")
-          : undefined;
+  const calculateBarPosition = (date: string, timelineWidth: number) => {
+    const totalDuration =
+      new Date(maxDate).getTime() - new Date(minDate).getTime();
+    const elapsedTime = new Date(date).getTime() - new Date(minDate).getTime();
+    return (elapsedTime / totalDuration) * timelineWidth;
+  };
 
-        if (fromPosition && toPosition) {
-          return {
-            ...connection,
-            startX: fromPosition.x,
-            startY: fromPosition.y,
-            endX: toPosition.x,
-            endY: toPosition.y,
-          };
-        }
-      }
-      return connection; // Return the original connection if no updates are needed
-    })
-  );
-};
-  
+  const calculateBarCenter = (task: Task) => {
+    const rowElement = document.querySelector(`[data-task-id="${task.id}"]`);
+    if (rowElement) {
+      const rowRect = rowElement.getBoundingClientRect();
+      return rowRect.top + rowRect.height / 2; // Center of the row
+    }
+    return 0; // Fallback
+  };
 
-  const handleDragStop = (task: Task, dragX: number) => {
+  // const updateConnections = (tasks: Task[]) => {
+  //   const updatedConnections = connections.map((connection) => {
+  //     const fromTask = tasks.find((t) => t.id === connection.fromId);
+  //     const toTask = tasks.find((t) => t.id === connection.toId);
+
+  //     if (!fromTask || !toTask) return connection; // Skip if tasks are missing
+
+  //     const startX = calculateBarPosition(fromTask.actualStart, timelineWidth);
+  //     const startY = calculateBarCenter(fromTask);
+  //     const endX = calculateBarPosition(toTask.actualStart, timelineWidth);
+  //     const endY = calculateBarCenter(toTask);
+
+  //     return {
+  //       ...connection,
+  //       startX,
+  //       startY,
+  //       endX,
+  //       endY,
+  //     };
+  //   });
+
+  //   setConnections(updatedConnections);
+
+  // };
+
+  // Utility functions
+
+  const handleDragStop = async (task: Task, dragX: number) => {
     const timelineDuration =
       new Date(maxDate).getTime() - new Date(minDate).getTime();
     const daysMoved = Math.round(
       (dragX / timelineWidth) * (timelineDuration / (1000 * 60 * 60 * 24))
     );
-  
+
+    const updateTaskDates = (tasks: Task[], targetTaskId: string): Task[] =>
+      tasks.map((t) => {
+        if (t.id === targetTaskId) {
+          return {
+            ...t,
+            actualStart: new Date(
+              new Date(t.actualStart).getTime() + daysMoved * 86400000
+            )
+              .toISOString()
+              .slice(0, 10),
+            actualEnd: new Date(
+              new Date(t.actualEnd).getTime() + daysMoved * 86400000
+            )
+              .toISOString()
+              .slice(0, 10),
+          };
+        }
+
+        // Recursively update subtasks if they exist
+        if (t.subtasks && t.subtasks.length > 0) {
+          return {
+            ...t,
+            subtasks: updateTaskDates(t.subtasks, targetTaskId),
+          };
+        }
+
+        return t;
+      });
+
     setTask((prevTasks) => {
-      const updatedTasks = prevTasks.map((t) =>
-        t.id === task.id
-          ? {
-              ...t,
-              actualStart: new Date(
-                new Date(task.actualStart).getTime() + daysMoved * 86400000
-              ).toISOString(),
-              actualEnd: new Date(
-                new Date(task.actualEnd).getTime() + daysMoved * 86400000
-              ).toISOString(),
+      const updatedTasks = updateTaskDates(prevTasks, task.id);
+
+      const updateTaskInFirestore = async (updatedTasks: Task[]) => {
+        try {
+          const tasksCollection = collection(db, "tasks");
+
+          // Determine if the task has a parent
+          if (task.id.includes(".")) {
+            const parentId = task.id.split(".").slice(0, -1).join(".");
+            const topLevelParentId = parentId.split(".")[0]; // Top-level parent
+
+            const findTopLevelTask = (
+              tasks: Task[],
+              id: string
+            ): Task | null => {
+              for (const t of tasks) {
+                if (t.id === id) return t;
+                if (t.subtasks && t.subtasks.length > 0) {
+                  const found = findTopLevelTask(t.subtasks, id);
+                  if (found) return found;
+                }
+              }
+              return null;
+            };
+
+            const topLevelTask = findTopLevelTask(
+              updatedTasks,
+              topLevelParentId
+            );
+            if (topLevelTask) {
+              const parentRef = doc(tasksCollection, topLevelParentId);
+              await setDoc(parentRef, topLevelTask);
+              console.log(
+                "Updated top-level parent in Firestore:",
+                topLevelTask
+              );
             }
-          : t
-      );
-  
-      updateConnections(task.id, updatedTasks); // Update connections after dragging
+          } else {
+            // Update the top-level task directly
+            const taskRef = doc(tasksCollection, task.id);
+            const updatedTask = updatedTasks.find((t) => t.id === task.id);
+            if (updatedTask) {
+              await setDoc(taskRef, updatedTask, { merge: true });
+              console.log("Task updated in Firestore:", updatedTask);
+            }
+          }
+        } catch (error) {
+          console.error("Error updating task in Firestore:", error);
+        }
+      };
+
+      updateTaskInFirestore(updatedTasks); // Update Firestore as part of the state update
       return updatedTasks;
     });
   };
-  
-  
 
   const calculateBarWidth = (
     taskStart: string,
@@ -2312,6 +2807,14 @@ const updateConnections = (taskId: string, updatedTasks: Task[]) => {
     return <>{children}</>;
   };
 
+  useEffect(() => {
+    if (selectedConnection) {
+      console.log("Selected connection:", selectedConnection);
+    } else {
+      console.log("No connection selected.");
+    }
+  }, [selectedConnection]);
+
   return (
     <Box
       ref={timelineRef}
@@ -2321,34 +2824,6 @@ const updateConnections = (taskId: string, updatedTasks: Task[]) => {
       height="100vh"
       position="relative"
     >
-      <svg
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          zIndex: 0,
-          width: "100%",
-          height: "100%",
-        }}
-        onMouseMove={handleMouseMove} 
-      >
-        <defs>
-          <marker
-            id="arrowhead"
-            markerWidth="10"
-            markerHeight="7"
-            refX="0"
-            refY="3.5"
-            orient="auto"
-          >
-         <polygon points="0 0, 10 3.5, 0 7" fill="orange" />
-          </marker>
-        </defs>
-
-        {renderConnections()}
-        {renderTemporaryLine()}
-      </svg>
-
       {tooltipData && (
         <Box
           position="absolute"
@@ -2366,7 +2841,14 @@ const updateConnections = (taskId: string, updatedTasks: Task[]) => {
         </Box>
       )}
 
-      <Flex align="center" mb={2}>
+      <Flex
+        align="center"
+        mb={2}
+        style={{
+          position: "relative", // Ensure stacking context
+          zIndex: 2, // Set higher than the SVG
+        }}
+      >
         <Text fontSize="xl" fontWeight="bold" mx={4}>
           Timeline
         </Text>
@@ -2392,7 +2874,91 @@ const updateConnections = (taskId: string, updatedTasks: Task[]) => {
         >
           {isEditMode ? "Disable Edit" : "Enable Edit"}
         </Button>
+
+        <Flex align="center">
+          <Text fontWeight={"bold"} fontSize={"sm"} mx={4}>Set Role:</Text>
+          <Select
+          fontSize={"sm"}
+            width="180px"
+          >
+            <option value="user">ARC BIM Modellers</option>
+            <option value="weeks">ARC Design Consultant</option>
+            <option value="months">ARC Design Coordinator</option>
+            <option value="quarters">Landscape Coordinator</option>
+            <option value="years">MEP BIM Modellers</option>
+            <option value="years">Portal Developer</option>
+          </Select>
+        </Flex>
+        
       </Flex>
+
+      {/* SVG container with pointer events only for visible strokes */}
+      <svg
+        pointerEvents="none" // Prevent SVG from blocking mouse events
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          zIndex: 1, // Lower than the buttons
+          width: "100%",
+          height: "100%",
+        }}
+        onMouseMove={handleMouseMove}
+      >
+        <defs>
+          <marker
+            id="arrowhead"
+            markerWidth="10"
+            markerHeight="7"
+            refX="0"
+            refY="3.5"
+            orient="auto"
+            pointerEvents="auto"
+          >
+            <polygon points="0 0, 10 3.5, 0 7" fill="orange" />
+          </marker>
+        </defs>
+
+        {renderConnections()}
+        {renderTemporaryLine()}
+      </svg>
+
+      {/* Modal for showing connection details */}
+      <Modal isOpen={isOpen} onClose={onClose}>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Connection Details</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            {selectedConnection && (
+              <>
+                <Text mb={4}>
+                  <strong>From:</strong> {selectedConnection.fromTaskName}
+                  <br />
+                  <strong>To:</strong> {selectedConnection.toTaskName}
+                </Text>
+                {/* <Text mb={4}>
+            <strong>Lead/Lag:</strong> 0
+          </Text> */}
+                <Flex justify="space-between">
+                  <Box display="flex" gap={4}>
+                    <Button colorScheme="blue" onClick={handleSaveConnection}>
+                      Save
+                    </Button>
+                    <Button colorScheme="red" onClick={handleDeleteConnection}>
+                      Delete
+                    </Button>
+                  </Box>
+                  <Button variant="outline" onClick={onClose}>
+                    Cancel
+                  </Button>
+                </Flex>
+              </>
+            )}
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+
       <Table border="1px" borderColor="gray.200" variant="simple">
         <Thead>{renderDateRow()}</Thead>
         <Tbody>
@@ -2436,6 +3002,16 @@ const updateConnections = (taskId: string, updatedTasks: Task[]) => {
                     timelineWidth,
                     dateRange
                   );
+
+            const calculateDateDifference = (
+              date1: string | Date,
+              date2: string | Date
+            ): number => {
+              const d1 = new Date(date1);
+              const d2 = new Date(date2);
+              const timeDifference = d1.getTime() - d2.getTime(); // Use getTime() for time in ms
+              return Math.ceil(timeDifference / (1000 * 60 * 60 * 24)); // Difference in days
+            };
 
             const renderSubtasks = (subtasks: Task[], level = 1) => {
               return subtasks.map((subtask) => {
@@ -2530,6 +3106,61 @@ const updateConnections = (taskId: string, updatedTasks: Task[]) => {
                               handleSubtaskBarClick(e, subtask, "actual")
                             }
                           >
+                            {(() => {
+                              const aheadByDays = calculateDateDifference(
+                                subtask.plannedStart,
+                                subtask.actualStart
+                              );
+                              const overdueByDays = calculateDateDifference(
+                                subtask.actualEnd,
+                                subtask.plannedEnd
+                              );
+
+                              // Show "Ahead by X days" if the actual start is earlier than planned start
+                              if (
+                                aheadByDays > 0 &&
+                                new Date(subtask.actualStart) <
+                                  new Date(subtask.plannedStart)
+                              ) {
+                                return (
+                                  <Text
+                                    position="absolute"
+                                    left="-15px"
+                                    top="50%"
+                                    transform="translate(-100%, -50%)"
+                                    fontSize="xs"
+                                    color="blue.600"
+                                    fontWeight="bold"
+                                  >
+                                    Ahead by {aheadByDays} day
+                                    {aheadByDays > 1 ? "s" : ""}
+                                  </Text>
+                                );
+                              }
+
+                              if (
+                                overdueByDays > 0 &&
+                                new Date(subtask.actualEnd) >
+                                  new Date(subtask.plannedEnd)
+                              ) {
+                                return (
+                                  <Text
+                                    position="absolute"
+                                    right="-15px"
+                                    top="50%"
+                                    transform="translate(100%, -50%)"
+                                    fontSize="xs"
+                                    color="red.600"
+                                    fontWeight="bold"
+                                  >
+                                    Overdue by {overdueByDays} day
+                                    {overdueByDays > 1 ? "s" : ""}
+                                  </Text>
+                                );
+                              }
+
+                              return null; // No status if neither ahead nor overdue
+                            })()}
                             {isEditMode && (
                               <svg
                                 width="20"
@@ -2543,13 +3174,18 @@ const updateConnections = (taskId: string, updatedTasks: Task[]) => {
                                 }}
                               >
                                 <circle
+                                  id={`${subtask.id}-start`}
                                   cx="10"
                                   cy="10"
                                   r="5"
                                   stroke="gray"
                                   fill="white"
                                   onMouseDown={(e) =>
-                                    handleCircleDragStart(e, task.id,"start")
+                                    handleCircleDragStart(
+                                      e,
+                                      subtask.id,
+                                      "start"
+                                    )
                                   }
                                   onMouseUp={(e) =>
                                     handleCircleDragEnd(e, subtask.id)
@@ -2570,13 +3206,14 @@ const updateConnections = (taskId: string, updatedTasks: Task[]) => {
                                 }}
                               >
                                 <circle
+                                  id={`${subtask.id}-end`}
                                   cx="7"
                                   cy="10"
                                   r="5"
                                   stroke="gray"
                                   fill="white"
                                   onMouseDown={(e) =>
-                                    handleCircleDragStart(e, task.id,"end")
+                                    handleCircleDragStart(e, subtask.id, "end")
                                   }
                                   onMouseUp={(e) =>
                                     handleCircleDragEnd(e, subtask.id)
@@ -2674,7 +3311,7 @@ const updateConnections = (taskId: string, updatedTasks: Task[]) => {
                         position="absolute"
                         top={isEditMode ? "70%" : "80%"}
                         cursor="pointer"
-                        left={`${actualPosition + 5}px`}
+                        left={`${actualPosition + 15}px`}
                         transform="translateY(-50%)"
                         width={`${actualWidth}px`}
                         bg="green.400"
@@ -2682,6 +3319,61 @@ const updateConnections = (taskId: string, updatedTasks: Task[]) => {
                         borderRadius="sm"
                         onClick={(e) => handleBarClick(e, task, "actual")}
                       >
+                        {(() => {
+                          const aheadByDays = calculateDateDifference(
+                            task.plannedStart,
+                            task.actualStart
+                          );
+                          const overdueByDays = calculateDateDifference(
+                            task.actualEnd,
+                            task.plannedEnd
+                          );
+
+                          // Show "Ahead by X days" if the actual start is earlier than planned start
+                          if (
+                            aheadByDays > 0 &&
+                            new Date(task.actualStart) <
+                              new Date(task.plannedStart)
+                          ) {
+                            return (
+                              <Text
+                                position="absolute"
+                                left="-15px"
+                                top="50%"
+                                transform="translate(-100%, -50%)"
+                                fontSize="xs"
+                                color="blue.600"
+                                fontWeight="bold"
+                              >
+                                Ahead by {aheadByDays} day
+                                {aheadByDays > 1 ? "s" : ""}
+                              </Text>
+                            );
+                          }
+
+                          if (
+                            overdueByDays > 0 &&
+                            new Date(task.actualEnd) > new Date(task.plannedEnd)
+                          ) {
+                            return (
+                              <Text
+                                position="absolute"
+                                right="-15px"
+                                top="50%"
+                                transform="translate(100%, -50%)"
+                                fontSize="xs"
+                                color="red.600"
+                                fontWeight="bold"
+                              >
+                                Overdue by {overdueByDays} day
+                                {overdueByDays > 1 ? "s" : ""}
+                              </Text>
+                            );
+                          }
+
+                          return null; // No status if neither ahead nor overdue
+                        })()}
+
                         {isEditMode && (
                           <svg
                             width="20"
@@ -2695,13 +3387,14 @@ const updateConnections = (taskId: string, updatedTasks: Task[]) => {
                             }}
                           >
                             <circle
+                              id={`${task.id}-start`}
                               cx="10"
                               cy="10"
                               r="5"
                               stroke="gray"
                               fill="white"
                               onMouseDown={(e) =>
-                                handleCircleDragStart(e, task.id,"start")
+                                handleCircleDragStart(e, task.id, "start")
                               }
                               onMouseUp={(e) => handleCircleDragEnd(e, task.id)}
                             />
@@ -2720,13 +3413,14 @@ const updateConnections = (taskId: string, updatedTasks: Task[]) => {
                             }}
                           >
                             <circle
+                              id={`${task.id}-end`}
                               cx="7"
                               cy="10"
                               r="5"
                               stroke="gray"
                               fill="white"
                               onMouseDown={(e) =>
-                                handleCircleDragStart(e, task.id,"end")
+                                handleCircleDragStart(e, task.id, "end")
                               }
                               onMouseUp={(e) => handleCircleDragEnd(e, task.id)}
                             />
