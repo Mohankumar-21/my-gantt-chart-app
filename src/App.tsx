@@ -2057,7 +2057,6 @@ const TimelinePanel: React.FC<{
       }
 
       const path = calculatePath(startX, startY, endX, endY);
-      console.log(`Path ${index}: ${path}`);
 
       return (
         <path
@@ -2095,6 +2094,9 @@ const TimelinePanel: React.FC<{
       />
     );
   };
+
+
+  
 
   const [isEditMode, setIsEditMode] = useState(false);
   const { expandedTaskIds, toggleExpandedTask } = useTaskContext();
@@ -2371,13 +2373,78 @@ const TimelinePanel: React.FC<{
 
   // Utility functions
 
+
+
+  const updateConnectionCoordinates = (taskId: string, newX: any, newY: any) => {
+    setConnections((prevConnections) =>
+      prevConnections.map((connection) => {
+        if (connection.fromId === taskId) {
+          return {
+            ...connection,
+            startX: newX,
+            startY: newY,
+          };
+        } else if (connection.toId === taskId) {
+          return {
+            ...connection,
+            endX: newX,
+            endY: newY,
+          };
+        }
+        return connection;
+      })
+    );
+  };
+
+
+  const updateConnectionsOnDrag = (taskId: string) => {
+    setConnections((prevConnections) =>
+      prevConnections.map((connection) => {
+        // Update `startX`, `startY` if the task is the "from" task
+        if (connection.fromId === taskId) {
+          const fromCircle = document.getElementById(`${taskId}-start`);
+          if (fromCircle) {
+            const rect = fromCircle.getBoundingClientRect();
+            const svg = timelineRef.current?.getBoundingClientRect();
+            if (svg) {
+              return {
+                ...connection,
+                startX: rect.x - svg.x + rect.width / 2,
+                startY: rect.y - svg.y + rect.height / 2,
+              };
+            }
+          }
+        }
+  
+        // Update `endX`, `endY` if the task is the "to" task
+        if (connection.toId === taskId) {
+          const toCircle = document.getElementById(`${taskId}-end`);
+          if (toCircle) {
+            const rect = toCircle.getBoundingClientRect();
+            const svg = timelineRef.current?.getBoundingClientRect();
+            if (svg) {
+              return {
+                ...connection,
+                endX: rect.x - svg.x + rect.width / 2,
+                endY: rect.y - svg.y + rect.height / 2,
+              };
+            }
+          }
+        }
+  
+        return connection; // Return unchanged connection if not related to this task
+      })
+    );
+  };
+  
+
   const handleDragStop = async (task: Task, dragX: number) => {
     const timelineDuration =
       new Date(maxDate).getTime() - new Date(minDate).getTime();
     const daysMoved = Math.round(
       (dragX / timelineWidth) * (timelineDuration / (1000 * 60 * 60 * 24))
     );
-
+  
     const updateTaskDates = (tasks: Task[], targetTaskId: string): Task[] =>
       tasks.map((t) => {
         if (t.id === targetTaskId) {
@@ -2395,7 +2462,7 @@ const TimelinePanel: React.FC<{
               .slice(0, 10),
           };
         }
-
+  
         // Recursively update subtasks if they exist
         if (t.subtasks && t.subtasks.length > 0) {
           return {
@@ -2403,66 +2470,72 @@ const TimelinePanel: React.FC<{
             subtasks: updateTaskDates(t.subtasks, targetTaskId),
           };
         }
-
+  
         return t;
       });
-
-    setTask((prevTasks) => {
-      const updatedTasks = updateTaskDates(prevTasks, task.id);
-
-      const updateTaskInFirestore = async (updatedTasks: Task[]) => {
-        try {
-          const tasksCollection = collection(db, "tasks");
-
-          // Determine if the task has a parent
-          if (task.id.includes(".")) {
-            const parentId = task.id.split(".").slice(0, -1).join(".");
-            const topLevelParentId = parentId.split(".")[0]; // Top-level parent
-
-            const findTopLevelTask = (
-              tasks: Task[],
-              id: string
-            ): Task | null => {
-              for (const t of tasks) {
-                if (t.id === id) return t;
-                if (t.subtasks && t.subtasks.length > 0) {
-                  const found = findTopLevelTask(t.subtasks, id);
-                  if (found) return found;
-                }
-              }
-              return null;
-            };
-
-            const topLevelTask = findTopLevelTask(
-              updatedTasks,
-              topLevelParentId
-            );
-            if (topLevelTask) {
-              const parentRef = doc(tasksCollection, topLevelParentId);
-              await setDoc(parentRef, topLevelTask);
-              console.log(
-                "Updated top-level parent in Firestore:",
-                topLevelTask
-              );
-            }
-          } else {
-            // Update the top-level task directly
-            const taskRef = doc(tasksCollection, task.id);
-            const updatedTask = updatedTasks.find((t) => t.id === task.id);
-            if (updatedTask) {
-              await setDoc(taskRef, updatedTask, { merge: true });
-              console.log("Task updated in Firestore:", updatedTask);
-            }
+  
+    const updatedTasks = updateTaskDates(tasks, task.id);
+  
+    setTask(updatedTasks); // Update local state immediately
+  
+    // Separate Firestore update logic
+    try {
+      const tasksCollection = collection(db, "tasks");
+  
+      // Find the top-level task to update in Firestore
+      const findTopLevelTask = (tasks: Task[], id: string): Task | null => {
+        for (const t of tasks) {
+          if (t.id === id) return t;
+          if (t.subtasks && t.subtasks.length > 0) {
+            const found = findTopLevelTask(t.subtasks, id);
+            if (found) return found;
           }
-        } catch (error) {
-          console.error("Error updating task in Firestore:", error);
         }
+        return null;
       };
+  
+      if (task.id.includes(".")) {
+        const parentId = task.id.split(".").slice(0, -1).join(".");
+        const topLevelParentId = parentId.split(".")[0]; // Top-level parent
+        const topLevelTask = findTopLevelTask(updatedTasks, topLevelParentId);
+  
+        if (topLevelTask) {
+          const parentRef = doc(tasksCollection, topLevelParentId);
+          await setDoc(parentRef, topLevelTask, { merge: true });
+          console.log("Updated top-level parent in Firestore:", topLevelTask);
+        }
+      } else {
+        // Update the top-level task directly
+        const taskRef = doc(tasksCollection, task.id);
+        const updatedTask = updatedTasks.find((t) => t.id === task.id);
+        if (updatedTask) {
+          await setDoc(taskRef, updatedTask, { merge: true });
+          console.log("Task updated in Firestore:", updatedTask);
+        }
+      }
+    } catch (error) {
+      console.error("Error updating task in Firestore:", error);
+    }
 
-      updateTaskInFirestore(updatedTasks); // Update Firestore as part of the state update
-      return updatedTasks;
-    });
+updateConnectionsOnDrag(task.id);
+
   };
+
+  const calculateTaskXPosition = (task: Task, dragX: number): number => {
+    const timelineDuration =
+      new Date(maxDate).getTime() - new Date(minDate).getTime();
+    const daysFromStart = (dragX / timelineWidth) * (timelineDuration / (1000 * 60 * 60 * 24));
+    const newStart = new Date(minDate).getTime() + daysFromStart * 86400000;
+    return ((newStart - new Date(minDate).getTime()) / timelineDuration) * timelineWidth;
+  };
+  
+  const calculateTaskYPosition = (task: Task): number => {
+    const taskHeight = 60; // Height of each row
+    const taskIndex = tasks.findIndex((t) => t.id === task.id);
+    return taskIndex * taskHeight + taskHeight / 2; // Center within the row
+  };
+  
+  
 
   const calculateBarWidth = (
     taskStart: string,
@@ -2815,6 +2888,23 @@ const TimelinePanel: React.FC<{
     }
   }, [selectedConnection]);
 
+
+  const updateConnections = (taskId: string, type: "start" | "end", x: number, y: number) => {
+    setConnections((prevConnections) =>
+      prevConnections.map((connection) => {
+        if (type === "start" && connection.fromId === taskId) {
+          return { ...connection, startX: x, startY: y };
+        }
+        if (type === "end" && connection.toId === taskId) {
+          return { ...connection, endX: x, endY: y };
+        }
+        return connection;
+      })
+    );
+  };
+  
+
+
   return (
     <Box
       ref={timelineRef}
@@ -2869,6 +2959,7 @@ const TimelinePanel: React.FC<{
         <Button
           size="sm"
           ml={4}
+          minWidth={"100px"}
           onClick={toggleEditMode}
           colorScheme={isEditMode ? "red" : "blue"}
         >
@@ -2876,7 +2967,7 @@ const TimelinePanel: React.FC<{
         </Button>
 
         <Flex align="center">
-          <Text fontWeight={"bold"} fontSize={"sm"} mx={4}>Set Role:</Text>
+          <Text fontWeight={"bold"} minWidth={"60px"} fontSize={"sm"} mx={4}>Set Role:</Text>
           <Select
           fontSize={"sm"}
             width="180px"
@@ -2892,9 +2983,9 @@ const TimelinePanel: React.FC<{
         
       </Flex>
 
-      {/* SVG container with pointer events only for visible strokes */}
+
       <svg
-        pointerEvents="none" // Prevent SVG from blocking mouse events
+        pointerEvents="none" 
         style={{
           position: "absolute",
           top: 0,
@@ -3090,7 +3181,10 @@ const TimelinePanel: React.FC<{
                         </Box>
                         <DraggableOrStatic
                           isEditMode={isEditMode}
-                          onStop={(e, data) => handleDragStop(subtask, data.x)}
+                          
+                          onStop={(e, data) => {
+                            handleDragStop(subtask, data.x);
+                          }}
                         >
                           <Box
                             position="absolute"
@@ -3306,6 +3400,7 @@ const TimelinePanel: React.FC<{
                     <DraggableOrStatic
                       isEditMode={isEditMode}
                       onStop={(e, data) => handleDragStop(task, data.x)}
+                      
                     >
                       <Box
                         position="absolute"
@@ -3396,7 +3491,9 @@ const TimelinePanel: React.FC<{
                               onMouseDown={(e) =>
                                 handleCircleDragStart(e, task.id, "start")
                               }
+                          
                               onMouseUp={(e) => handleCircleDragEnd(e, task.id)}
+    
                             />
                           </svg>
                         )}
@@ -3422,7 +3519,9 @@ const TimelinePanel: React.FC<{
                               onMouseDown={(e) =>
                                 handleCircleDragStart(e, task.id, "end")
                               }
+                           
                               onMouseUp={(e) => handleCircleDragEnd(e, task.id)}
+                           
                             />
                           </svg>
                         )}
