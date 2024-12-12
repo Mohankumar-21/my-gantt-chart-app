@@ -60,6 +60,9 @@ import {
   deleteDoc,
 } from "@firebase/firestore";
 import { useToast } from "@chakra-ui/react";
+import ReactFlow, { addEdge, Background, Controls, MarkerType, useEdgesState, useNodesState } from "reactflow";
+import { Connection, Edge } from "react-flow-renderer";
+
 
 interface Task {
   id: string;
@@ -82,12 +85,7 @@ interface Task {
   dependencies?: { taskId: string; type: "FS" | "SS" | "FF" | "SF" }[];
 }
 
-interface Connection {
-  id: string;
-  sourceTaskId: string;
-  targetTaskId: string;
-  connectionType: "FS" | "SS" | "FF" | "SF"; // Connection type
-}
+
 
 const TaskContext = createContext<{
   expandedTaskIds: Set<string>;
@@ -1624,6 +1622,57 @@ const TimelinePanel: React.FC<{
   tasks,
   setTask,
 }) => {
+
+
+  const [connections, setConnections] = useState<
+  {
+    fromId: string;
+    toId: string;
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+  }[]
+>([]);
+
+const [nodes, setNodes] = useNodesState([]);
+const [edges, setEdges] = useEdgesState([]);
+
+const generateEdges = () => {
+  const newEdges = connections.map((connection) => ({
+    id: `${connection.fromId}-${connection.toId}`,
+    source: connection.fromId,
+    target: connection.toId,
+    animated: true,
+    style: { stroke: 'orange', strokeWidth: 2 },
+    markerEnd: {
+      type: MarkerType.Arrow, // Correct markerEnd usage
+    },
+  }));
+  setEdges(newEdges);
+};
+
+useEffect(() => {
+  generateEdges();
+}, [connections]);
+
+  
+  const onConnect = (params: Connection) => {
+    const edge: Edge = {
+      id: `${params.source}-${params.target}`,
+      source: params.source!,
+      target: params.target!,
+      sourceHandle: params.sourceHandle || "default",
+      targetHandle: params.targetHandle || "default",
+      type: "default",
+      style: { stroke: "orange" },
+    };
+  
+    setEdges((prevEdges) => [...prevEdges, edge]);
+  };
+  
+
+
   const [selectedConnection, setSelectedConnection] = useState<{
     fromId: string;
     toId: string;
@@ -1687,16 +1736,7 @@ const TimelinePanel: React.FC<{
     y: number;
   } | null>(null);
 
-  const [connections, setConnections] = useState<
-    {
-      fromId: string;
-      toId: string;
-      startX: number;
-      startY: number;
-      endX: number;
-      endY: number;
-    }[]
-  >([]);
+
 
   console.log("Connections:", connections);
 
@@ -1865,10 +1905,16 @@ const TimelinePanel: React.FC<{
     }
   };
 
-  const isVisible = (taskId: string): boolean => {
+  const isVisible = (taskId: string | undefined): boolean => {
+    // Handle undefined taskId
+    if (!taskId) {
+      console.warn("isVisible called with undefined taskId");
+      return false;
+    }
+  
     // Top-level tasks are always visible
     if (!taskId.includes(".")) return true;
-
+  
     // Check if any parent in the hierarchy is expanded
     const parts = taskId.split(".");
     for (let i = parts.length - 1; i > 0; i--) {
@@ -1878,12 +1924,14 @@ const TimelinePanel: React.FC<{
         return false;
       }
     }
-
+  
     return true;
   };
+  
 
   const saveConnectionsToFirebase = async (
     connections: {
+      id?: string; // Optional unique ID for each connection
       fromId: string;
       toId: string;
       startX: number;
@@ -1894,17 +1942,43 @@ const TimelinePanel: React.FC<{
   ) => {
     try {
       const connectionsCollection = collection(db, "connections");
-
-      // Save each connection with a unique ID
-      const savePromises = connections.map((connection) =>
-        setDoc(
-          doc(connectionsCollection, `${connection.fromId}-${connection.toId}`),
-          connection
-        )
-      );
-
-      await Promise.all(savePromises);
-
+      const docRef = doc(connectionsCollection, "connectionsDocument"); // Single document to store all connections
+  
+      // Validate connections and assign defaults for optional fields
+      const connectionsData = connections
+        .filter((connection) => {
+          // Filter out invalid connections
+          if (
+            !connection.fromId ||
+            !connection.toId ||
+            connection.startX == null ||
+            connection.startY == null ||
+            connection.endX == null ||
+            connection.endY == null
+          ) {
+            console.warn("Invalid connection found:", connection);
+            return false;
+          }
+          return true;
+        })
+        .map((connection) => ({
+          id: connection.id || `${connection.fromId}-${connection.toId}`, // Generate ID if missing
+          fromId: connection.fromId,
+          toId: connection.toId,
+          startX: connection.startX,
+          startY: connection.startY,
+          endX: connection.endX,
+          endY: connection.endY,
+        }));
+  
+      // Check if there are valid connections to save
+      if (connectionsData.length === 0) {
+        console.warn("No valid connections to save.");
+        return;
+      }
+  
+      await setDoc(docRef, { lines: connectionsData }, { merge: true });
+  
       console.log("Connections saved to Firebase successfully.");
     } catch (error) {
       console.error("Error saving connections to Firebase:", error);
@@ -1918,25 +1992,39 @@ const TimelinePanel: React.FC<{
       });
     }
   };
+  
+  
 
   const fetchConnectionsFromFirebase = async () => {
     try {
       const connectionsCollection = collection(db, "connections");
-      const snapshot = await getDocs(connectionsCollection);
-
-      const fetchedConnections = snapshot.docs.map((doc) => doc.data());
-
-      console.log("Fetched connections from Firebase:", fetchedConnections);
-
-      // Return connections in the desired format
-      return fetchedConnections.map((connection) => ({
-        fromId: connection.fromId,
-        toId: connection.toId,
-        startX: connection.startX,
-        startY: connection.startY,
-        endX: connection.endX,
-        endY: connection.endY,
-      }));
+      const docRef = doc(connectionsCollection, "connectionsDocument");
+      const snapshot = await getDoc(docRef);
+  
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+  
+        if (Array.isArray(data.lines)) {
+          const connections = data.lines.map((connection) => ({
+            id: connection.id,
+            fromId: connection.fromId,
+            toId: connection.toId,
+            startX: connection.startX,
+            startY: connection.startY,
+            endX: connection.endX,
+            endY: connection.endY,
+          }));
+  
+          console.log("Fetched connections from Firebase:", connections);
+          return connections;
+        } else {
+          console.warn("Connections data is not in the expected format:", data);
+          return [];
+        }
+      } else {
+        console.warn("No connections document found in Firebase.");
+        return [];
+      }
     } catch (error) {
       console.error("Error fetching connections from Firebase:", error);
       toast({
@@ -1950,37 +2038,55 @@ const TimelinePanel: React.FC<{
       return [];
     }
   };
+  
 
   const handleDeleteConnection = async () => {
-    if (!selectedConnection) return;
-
+    if (!selectedConnection) {
+      console.warn("No connection selected for deletion.");
+      return;
+    }
+  
     try {
-      const connectionId = `${selectedConnection.fromId}-${selectedConnection.toId}`;
-      const connectionDoc = doc(db, "connections", connectionId);
-
-      // Delete the document from Firebase
-      await deleteDoc(connectionDoc);
-      setConnections((prevConnections) =>
-        prevConnections.filter(
-          (connection) =>
-            !(
-              connection.fromId === selectedConnection.fromId &&
-              connection.toId === selectedConnection.toId
-            )
-        )
-      );
-
-      setSelectedConnection(null);
-      onClose();
-
-      toast({
-        title: "Connection Deleted",
-        description: "The selected connection has been successfully deleted.",
-        status: "success",
-        duration: 3000,
-        isClosable: true,
-        position: "top",
-      });
+      const connectionsCollection = collection(db, "connections");
+      const docRef = doc(connectionsCollection, "connectionsDocument");
+  
+      // Fetch the current connections
+      const snapshot = await getDoc(docRef);
+  
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+  
+        if (Array.isArray(data.lines)) {
+          // Filter out the selected connection
+          const updatedConnections = data.lines.filter(
+            (connection) =>
+              connection.fromId !== selectedConnection.fromId ||
+              connection.toId !== selectedConnection.toId
+          );
+  
+          // Update the document with the new connections array
+          await setDoc(docRef, { lines: updatedConnections }, { merge: true });
+  
+          // Update local state
+          setConnections(updatedConnections);
+  
+          setSelectedConnection(null);
+          onClose();
+  
+          toast({
+            title: "Connection Deleted",
+            description: "The selected connection has been successfully deleted.",
+            status: "success",
+            duration: 3000,
+            isClosable: true,
+            position: "top",
+          });
+        } else {
+          console.warn("Connections data is not in the expected format:", data);
+        }
+      } else {
+        console.warn("No connections document found in Firebase.");
+      }
     } catch (error) {
       console.error("Error deleting connection:", error);
       toast({
@@ -1993,12 +2099,20 @@ const TimelinePanel: React.FC<{
       });
     }
   };
-
+  
+  
   const getVisibleConnections = () =>
     connections.filter(({ fromId, toId }) => {
+      // Ensure both IDs are valid
+      if (!fromId || !toId) {
+        console.warn("Invalid connection:", { fromId, toId });
+        return false;
+      }
+  
       // Ensure both ends of the connection are visible
       return isVisible(fromId) && isVisible(toId);
     });
+  
   console.log("selected collections", selectedConnection);
 
   useEffect(() => {
@@ -2036,12 +2150,53 @@ const TimelinePanel: React.FC<{
     }
   };
 
+
+
+
+  type ZoomLevel = "days" | "weeks" | "months" | "quarters" | "years";
+
+  const zoomScaleFactors: Record<ZoomLevel, number> = {
+    days: 1,
+    weeks: 7,
+    months: 30,
+    quarters: 90,
+    years: 365,
+  };
+
+
+
+  const calculatePathForZoom = (
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    zoomLevel: ZoomLevel // Explicitly type zoomLevel as ZoomLevel
+  ): string => {
+    const zoomScaleFactors: Record<ZoomLevel, number> = {
+      days: 1,
+      weeks: 7,
+      months: 30,
+      quarters: 90,
+      years: 365,
+    };
+  
+    const scaleFactor = zoomScaleFactors[zoomLevel]; // No error now
+    const adjustedStartX = startX / scaleFactor;
+    const adjustedStartY = startY;
+    const adjustedEndX = endX / scaleFactor;
+    const adjustedEndY = endY;
+  
+    return `M ${adjustedStartX},${adjustedStartY} L ${adjustedStartX + 10},${adjustedStartY} L ${adjustedStartX + 10},${adjustedEndY} L ${adjustedEndX},${adjustedEndY}`;
+  };
+  
+  
+
   const renderConnections = () => {
     const visibleConnections = getVisibleConnections();
-
+  
     return visibleConnections.map((connection, index) => {
       const { startX, startY, endX, endY, fromId, toId } = connection;
-
+  
       if (
         startX == null ||
         startY == null ||
@@ -2055,13 +2210,20 @@ const TimelinePanel: React.FC<{
         console.warn("Invalid connection coordinates:", connection);
         return null;
       }
-
-      const path = calculatePath(startX, startY, endX, endY);
-
+  
+      // Dynamically calculate path based on current zoom level
+      const adjustedPath = calculatePathForZoom(
+        startX,
+        startY,
+        endX,
+        endY,
+        zoomLevel as ZoomLevel // Ensure zoomLevel is typed correctly
+      );
+  
       return (
         <path
           key={index}
-          d={path}
+          d={adjustedPath}
           fill="none"
           stroke="orange"
           strokeWidth={2}
@@ -2076,7 +2238,7 @@ const TimelinePanel: React.FC<{
       );
     });
   };
-
+  
   const renderTemporaryLine = () => {
     if (!draggingConnection || draggingConnection.endX === undefined)
       return null;
@@ -2575,6 +2737,10 @@ updateConnectionsOnDrag(task.id);
     const clampedStart = Math.max(taskStartTime, timelineStartTime);
     const clampedEnd = Math.min(taskEndTime, timelineEndTime);
 
+    if (clampedStart >= timelineEndTime || clampedEnd <= timelineStartTime) {
+      return { position: 0, width: 0 };
+    }
+
     if (isYearsZoomLevel) {
       const yearDuration = 365 * 24 * 60 * 60 * 1000;
       const yearsCount = Math.ceil(
@@ -3009,10 +3175,22 @@ updateConnectionsOnDrag(task.id);
             <polygon points="0 0, 10 3.5, 0 7" fill="orange" />
           </marker>
         </defs>
-
-        {renderConnections()}
+        <div style={{ height: "500px", width: "100%" }}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+        
+          onConnect={onConnect}
+          fitView
+        >
+          <Background />
+          <Controls />
+        </ReactFlow>
+      </div>
         {renderTemporaryLine()}
       </svg>
+
+ 
 
       {/* Modal for showing connection details */}
       <Modal isOpen={isOpen} onClose={onClose}>
