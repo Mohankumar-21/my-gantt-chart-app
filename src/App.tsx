@@ -702,7 +702,7 @@ const TaskListPanel: React.FC<{
 
   const handleDeleteTask = async (reason: string) => {
     const projectId = "StaticProjectID";
-
+  
     if (!editingTaskId) {
       toast({
         title: "Error",
@@ -714,17 +714,45 @@ const TaskListPanel: React.FC<{
       });
       return;
     }
-
+  
     try {
       const projectRef = doc(db, "projects", projectId);
       const docSnapshot = await getDoc(projectRef);
-
+  
       if (!docSnapshot.exists()) {
         throw new Error("Project not found");
       }
-
+  
       const currentData = docSnapshot.data().data || [];
-
+      const currentAudits = docSnapshot.data().audits || [];
+  
+      // Find the task being deleted
+      const findTaskById = (tasks: Task[], taskId: string): Task | null => {
+        for (const task of tasks) {
+          if (task.id === taskId) return task;
+          if (task.subtasks && task.subtasks.length > 0) {
+            const found = findTaskById(task.subtasks, taskId);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+  
+      const deletedTask = findTaskById(currentData, editingTaskId);
+  
+      if (!deletedTask) {
+        throw new Error("Task not found in hierarchy");
+      }
+  
+      // Prepare audit entry
+      const auditEntry = {
+        taskId: deletedTask.id,
+        taskName: deletedTask.name,
+        reason,
+        role: deletedTask.role,
+        deletionDate: new Date().toISOString(),
+      };
+  
       // Remove task from hierarchy
       const removeTaskFromHierarchy = (tasks: Task[], taskId: string): Task[] =>
         tasks
@@ -733,17 +761,19 @@ const TaskListPanel: React.FC<{
             ...task,
             subtasks: removeTaskFromHierarchy(task.subtasks || [], taskId),
           }));
-
+  
       const updatedData = removeTaskFromHierarchy(currentData, editingTaskId);
-
-      // Save back to Firestore
+  
+      // Save updated data and audits to Firestore
       await setDoc(projectRef, {
         ...docSnapshot.data(),
         data: updatedData,
+        audits: [...currentAudits, auditEntry], // Append new audit entry
       });
-
+  
+      // Update local state
       setTask(updatedData);
-
+  
       toast({
         title: "Task Deleted",
         description: `Task "${editingTaskId}" has been successfully deleted.`,
@@ -751,7 +781,7 @@ const TaskListPanel: React.FC<{
         duration: 3000,
         isClosable: true,
       });
-
+  
       setEditingTaskId(null);
       setIsModalOpen(false);
     } catch (error: any) {
@@ -765,6 +795,7 @@ const TaskListPanel: React.FC<{
       });
     }
   };
+  
 
   const renderTaskRows = (task: Task, level = 0): React.ReactNode => (
     <React.Fragment key={`task-${task.id}`}>
@@ -1087,7 +1118,7 @@ const TaskListPanel: React.FC<{
               colorScheme="red"
               ml={3}
               onClick={() => {
-                // handleDeleteTask(deleteReason);
+                handleDeleteTask(deleteReason);
                 handleCloseDeleteModal();
               }}
               isDisabled={!deleteReason.trim()} // Disable if no reason is provided
