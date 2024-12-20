@@ -48,6 +48,7 @@ import {
   SliderThumb,
   Tooltip,
   useDisclosure,
+  Textarea,
 } from "@chakra-ui/react";
 import { db } from "./firebase/firebaseconfig";
 import {
@@ -60,9 +61,15 @@ import {
   deleteDoc,
 } from "@firebase/firestore";
 import { useToast } from "@chakra-ui/react";
-import ReactFlow, { addEdge, Background, Controls, MarkerType, useEdgesState, useNodesState } from "reactflow";
+import ReactFlow, {
+  addEdge,
+  Background,
+  Controls,
+  MarkerType,
+  useEdgesState,
+  useNodesState,
+} from "reactflow";
 import { Connection, Edge } from "react-flow-renderer";
-
 
 interface Task {
   id: string;
@@ -75,8 +82,10 @@ interface Task {
   actualDuration?: number;
   dependency: string;
   risk: string;
+  wbs?: string;
   inlineProgress?: number;
   progress: number;
+  predecessor?: string;
   role?: string;
   status: string;
   type: string;
@@ -84,8 +93,6 @@ interface Task {
   subtasks?: Task[];
   dependencies?: { taskId: string; type: "FS" | "SS" | "FF" | "SF" }[];
 }
-
-
 
 const TaskContext = createContext<{
   expandedTaskIds: Set<string>;
@@ -116,6 +123,9 @@ const TaskListPanel: React.FC<{
   const { expandedTaskIds, toggleExpandedTask } = useTaskContext();
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
+
   const [newTask, setNewTask] = useState<Task>({
     id: "",
     name: "",
@@ -168,7 +178,7 @@ const TaskListPanel: React.FC<{
         ...prev,
         plannedEnd: plannedEndDate,
       }));
-    }else if (newTask.duration === 0 || newTask.duration === null) {
+    } else if (newTask.duration === 0 || newTask.duration === null) {
       setNewTask((prev) => ({
         ...prev,
         plannedEnd: "", // Reset plannedEnd to default state
@@ -186,8 +196,10 @@ const TaskListPanel: React.FC<{
         ...prev,
         actualEnd: actualEndDate,
       }));
-    }
-    else if (newTask.actualDuration === 0 || newTask.actualDuration === null) {
+    } else if (
+      newTask.actualDuration === 0 ||
+      newTask.actualDuration === null
+    ) {
       setNewTask((prev) => ({
         ...prev,
         actualEnd: "", // Reset plannedEnd to default state
@@ -252,7 +264,6 @@ const TaskListPanel: React.FC<{
     }));
   };
   const handleDurationChange = (change: number) => {
-
     if (!newTask.plannedStart) {
       toast({
         title: "Validation Error",
@@ -273,7 +284,9 @@ const TaskListPanel: React.FC<{
     });
   };
 
-  const handleDurationInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDurationInputChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     if (!newTask.plannedStart) {
       toast({
         title: "Validation Error",
@@ -285,20 +298,20 @@ const TaskListPanel: React.FC<{
       });
       return;
     }
-  
+
     const value = e.target.value.slice(0, 6);
     const parsedValue = value.trim() === "" ? null : parseInt(value, 10);
-  
+
     setNewTask((prev) => ({
       ...prev,
-      duration: parsedValue === null || isNaN(parsedValue) ? 0 : Math.max(parsedValue, 0),
+      duration:
+        parsedValue === null || isNaN(parsedValue)
+          ? 0
+          : Math.max(parsedValue, 0),
     }));
   };
-  
-  
 
   const handleActualDurationChange = (change: number) => {
-
     if (!newTask.actualStart) {
       toast({
         title: "Validation Error",
@@ -320,8 +333,9 @@ const TaskListPanel: React.FC<{
     });
   };
 
-
-  const handleActualDurationInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleActualDurationInputChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     if (!newTask.actualStart) {
       toast({
         title: "Validation Error",
@@ -333,13 +347,16 @@ const TaskListPanel: React.FC<{
       });
       return;
     }
-  
+
     const value = e.target.value.slice(0, 6);
     const parsedValue = value.trim() === "" ? null : parseInt(value, 10);
-  
+
     setNewTask((prev) => ({
       ...prev,
-      actualDuration: parsedValue === null || isNaN(parsedValue) ? 0 : Math.max(parsedValue, 0),
+      actualDuration:
+        parsedValue === null || isNaN(parsedValue)
+          ? 0
+          : Math.max(parsedValue, 0),
     }));
   };
 
@@ -399,18 +416,41 @@ const TaskListPanel: React.FC<{
     }));
   };
 
+  const handleOpenDeleteModal = () => {
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleCloseDeleteModal = () => {
+    setIsDeleteModalOpen(false);
+    setDeleteReason("");
+  };
+
   useEffect(() => {
     const fetchTasks = async () => {
+      const projectId = "StaticProjectID"; // Replace with dynamic logic later
       try {
-        const tasksCollection = collection(db, "tasks");
-        const snapshot = await getDocs(tasksCollection);
-        const tasksData = snapshot.docs
-          .map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }))
-          .sort((a, b) => parseInt(a.id) - parseInt(b.id)) as Task[];
-        setTask(tasksData);
+        const projectRef = doc(db, "projects", projectId);
+        const snapshot = await getDoc(projectRef);
+
+        if (snapshot.exists()) {
+          const tasksData = snapshot.data()?.data || [];
+          setTask(
+            tasksData.sort(
+              (a: { id: string }, b: { id: string }) =>
+                parseInt(a.id) - parseInt(b.id)
+            ) as Task[]
+          );
+        } else {
+          console.warn("Project not found");
+          toast({
+            title: "Warning",
+            description: "No tasks found for the selected project.",
+            status: "warning",
+            duration: 3000,
+            isClosable: true,
+            position: "top",
+          });
+        }
       } catch (error) {
         console.error("Error fetching tasks:", error);
         toast({
@@ -428,6 +468,8 @@ const TaskListPanel: React.FC<{
   }, []);
 
   const handleSaveTask = async () => {
+    const projectId = "StaticProjectID";
+
     if (
       !newTask.name ||
       !newTask.plannedStart ||
@@ -478,102 +520,59 @@ const TaskListPanel: React.FC<{
     }
 
     try {
-      const tasksCollection = collection(db, "tasks");
+      const projectRef = doc(db, "projects", projectId);
+      const docSnapshot = await getDoc(projectRef);
 
+      let updatedData = docSnapshot.exists()
+        ? docSnapshot.data().data || []
+        : [];
+
+      // Check if the task is a subtask
       if (newTask.id.includes(".")) {
-        // Identify parent ID
         const parentId = newTask.id.split(".").slice(0, -1).join(".");
-        console.log("Parent ID being searched for:", parentId);
 
-        // Find parent in local state
-        const findParentTask = (
-          tasks: Task[],
-          targetId: string
-        ): Task | null => {
-          for (const task of tasks) {
-            if (task.id === targetId) return task;
-            if (task.subtasks && task.subtasks.length > 0) {
-              const found = findParentTask(task.subtasks, targetId);
-              if (found) return found;
-            }
-          }
-          return null;
-        };
-
-        const parentTask = findParentTask(tasks, parentId);
-
-        if (!parentTask) {
-          console.error(`Parent task not found in local state: ${parentId}`);
-          throw new Error(`Parent task not found: ${parentId}`);
-        }
-
-        console.log("Found parent task:", parentTask);
-
-        // Add subtask to the parent
-        const updatedParentTask = {
-          ...parentTask,
-          subtasks: [...(parentTask.subtasks || []), newTask],
-        };
-
-        // Update local state recursively
-        const updateTasks = (
-          tasks: Task[],
-          targetId: string,
-          updatedTask: Task
-        ): Task[] =>
+        // Find and update the parent task
+        const updateParentTask = (tasks: Task[], targetId: string): Task[] =>
           tasks.map((task) =>
             task.id === targetId
-              ? updatedTask
+              ? {
+                  ...task,
+                  subtasks: [...(task.subtasks || []), newTask],
+                }
               : {
                   ...task,
-                  subtasks: updateTasks(
-                    task.subtasks || [],
-                    targetId,
-                    updatedTask
-                  ),
+                  subtasks: task.subtasks
+                    ? updateParentTask(task.subtasks, targetId)
+                    : [],
                 }
           );
 
-        const updatedTasks = updateTasks(tasks, parentId, updatedParentTask);
-
-        // Update local state
-        setTask(updatedTasks);
-
-        // Save top-level parent document to Firestore
-        const topLevelParentId = parentId.split(".")[0]; // Get the top-level parent ID
-        const topLevelParent = updatedTasks.find(
-          (t) => t.id === topLevelParentId
-        );
-
-        if (topLevelParent) {
-          const parentRef = doc(tasksCollection, topLevelParentId);
-          await setDoc(parentRef, topLevelParent);
-          console.log("Updated top-level parent in Firestore:", topLevelParent);
-        }
-
-        toast({
-          title: "Subtask Saved",
-          description: `Subtask "${newTask.name}" added to Task ${parentId}.`,
-          status: "success",
-          duration: 3000,
-          isClosable: true,
-        });
+        updatedData = updateParentTask(updatedData, parentId);
       } else {
-        // Handle Parent Task
-        const taskRef = doc(tasksCollection, newTask.id);
-        await setDoc(taskRef, newTask);
-
-        // Update local state
-        setTask((prevTasks) => [...prevTasks, newTask]);
-
-        toast({
-          title: "Task Saved",
-          description: `Task "${newTask.name}" has been saved.`,
-          status: "success",
-          duration: 3000,
-          isClosable: true,
+        // Add the new task to the top level
+        updatedData.push({
+          ...newTask,
+          subtasks: [],
         });
       }
+
+      // Save the updated data back to Firestore
+      await setDoc(projectRef, {
+        container: projectId,
+        data: updatedData,
+        links: [],
+      });
+
+      // Update local state
+      setTask(updatedData);
+
+      toast({
+        title: "Task Saved",
+        description: `Task "${newTask.name}" has been saved to project "${projectId}".`,
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      });
 
       setIsModalOpen(false);
     } catch (error: any) {
@@ -589,6 +588,7 @@ const TaskListPanel: React.FC<{
   };
 
   const handleUpdateTask = async () => {
+    const projectId = "StaticProjectID";
     if (
       !newTask.name ||
       !newTask.plannedStart ||
@@ -647,132 +647,44 @@ const TaskListPanel: React.FC<{
       });
       return;
     }
-
     try {
-      const tasksCollection = collection(db, "tasks");
+      const projectRef = doc(db, "projects", projectId);
+      const docSnapshot = await getDoc(projectRef);
 
-      if (editingTaskId.includes(".")) {
-        // Identify parent ID
-        const parentId = editingTaskId.split(".").slice(0, -1).join(".");
-        console.log("Parent ID being searched for:", parentId);
-
-        // Find parent in local state
-        const findParentTask = (
-          tasks: Task[],
-          targetId: string
-        ): Task | null => {
-          for (const task of tasks) {
-            if (task.id === targetId) return task;
-            if (task.subtasks && task.subtasks.length > 0) {
-              const found = findParentTask(task.subtasks, targetId);
-              if (found) return found;
-            }
-          }
-          return null;
-        };
-
-        const parentTask = findParentTask(tasks, parentId);
-
-        if (!parentTask) {
-          console.error(`Parent task not found in local state: ${parentId}`);
-          throw new Error(`Parent task not found: ${parentId}`);
-        }
-
-        console.log("Found parent task:", parentTask);
-
-        // Recursively update the subtasks hierarchy
-        const updateSubtasks = (
-          taskList: Task[],
-          taskId: string,
-          updatedTask: Task
-        ): Task[] =>
-          taskList.map((task) =>
-            task.id === taskId
-              ? { ...task, ...updatedTask }
-              : {
-                  ...task,
-                  subtasks: updateSubtasks(
-                    task.subtasks || [],
-                    taskId,
-                    updatedTask
-                  ),
-                }
-          );
-
-        const updatedParentTask = {
-          ...parentTask,
-          subtasks: updateSubtasks(
-            parentTask.subtasks || [],
-            editingTaskId,
-            newTask
-          ),
-        };
-
-        // Update local state recursively
-        const updateTasks = (
-          tasks: Task[],
-          targetId: string,
-          updatedTask: Task
-        ): Task[] =>
-          tasks.map((task) =>
-            task.id === targetId
-              ? updatedTask
-              : {
-                  ...task,
-                  subtasks: updateTasks(
-                    task.subtasks || [],
-                    targetId,
-                    updatedTask
-                  ),
-                }
-          );
-
-        const updatedTasks = updateTasks(tasks, parentId, updatedParentTask);
-
-        // Update local state
-        setTask(updatedTasks);
-
-        // Save top-level parent document to Firestore
-        const topLevelParentId = parentId.split(".")[0]; // Get the top-level parent ID
-        const topLevelParent = updatedTasks.find(
-          (t) => t.id === topLevelParentId
-        );
-
-        if (topLevelParent) {
-          const parentRef = doc(tasksCollection, topLevelParentId);
-          await setDoc(parentRef, topLevelParent);
-          console.log("Updated top-level parent in Firestore:", topLevelParent);
-        }
-
-        toast({
-          title: "Task Updated",
-          description: `Task "${newTask.name}" has been successfully updated.`,
-          status: "success",
-          duration: 3000,
-          isClosable: true,
-        });
-      } else {
-        // Handle Parent Task Update
-        const taskRef = doc(tasksCollection, editingTaskId);
-
-        // Update Firestore
-        await setDoc(taskRef, newTask, { merge: true });
-
-        // Update local state
-        setTask((prevTasks) =>
-          prevTasks.map((task) =>
-            task.id === editingTaskId ? { ...task, ...newTask } : task
-          )
-        );
-
-        toast({
-          title: "Task Updated",
-          description: `Task "${newTask.name}" has been successfully updated.`,
-          status: "success",
-          duration: 3000,
-          isClosable: true,
-        });
+      if (!docSnapshot.exists()) {
+        throw new Error("Project not found");
       }
+
+      const currentData = docSnapshot.data().data || [];
+
+      // Update task in the hierarchy
+      const updateTaskInHierarchy = (tasks: Task[], taskId: string): Task[] =>
+        tasks.map((task) =>
+          task.id === taskId
+            ? { ...task, ...newTask }
+            : {
+                ...task,
+                subtasks: updateTaskInHierarchy(task.subtasks || [], taskId),
+              }
+        );
+
+      const updatedData = updateTaskInHierarchy(currentData, editingTaskId);
+
+      // Save back to Firestore
+      await setDoc(projectRef, {
+        ...docSnapshot.data(),
+        data: updatedData,
+      });
+
+      setTask(updatedData);
+
+      toast({
+        title: "Task Updated",
+        description: `Task "${newTask.name}" has been successfully updated.`,
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      });
 
       setEditingTaskId(null);
       setIsModalOpen(false);
@@ -788,7 +700,9 @@ const TaskListPanel: React.FC<{
     }
   };
 
-  const handleDeleteTask = async () => {
+  const handleDeleteTask = async (reason: string) => {
+    const projectId = "StaticProjectID";
+
     if (!editingTaskId) {
       toast({
         title: "Error",
@@ -802,121 +716,42 @@ const TaskListPanel: React.FC<{
     }
 
     try {
-      const tasksCollection = collection(db, "tasks");
+      const projectRef = doc(db, "projects", projectId);
+      const docSnapshot = await getDoc(projectRef);
 
-      if (editingTaskId.includes(".")) {
-        // Identify Parent Task ID
-        const parentId = editingTaskId.split(".").slice(0, -1).join(".");
-        console.log("Parent ID being searched for:", parentId);
-
-        // Find Parent Task in Local State
-        const findParentTask = (
-          tasks: Task[],
-          targetId: string
-        ): Task | null => {
-          for (const task of tasks) {
-            if (task.id === targetId) return task;
-            if (task.subtasks && task.subtasks.length > 0) {
-              const found = findParentTask(task.subtasks, targetId);
-              if (found) return found;
-            }
-          }
-          return null;
-        };
-
-        const parentTask = findParentTask(tasks, parentId);
-
-        if (!parentTask) {
-          console.error(`Parent task not found: ${parentId}`);
-          throw new Error(`Parent task not found: ${parentId}`);
-        }
-
-        console.log("Found parent task:", parentTask);
-
-        // Recursively remove the task from the subtasks hierarchy
-        const removeTaskFromSubtasks = (
-          taskList: Task[],
-          taskId: string
-        ): Task[] =>
-          taskList
-            .filter((task) => task.id !== taskId)
-            .map((task) => ({
-              ...task,
-              subtasks: removeTaskFromSubtasks(task.subtasks || [], taskId),
-            }));
-
-        const updatedParentTask = {
-          ...parentTask,
-          subtasks: removeTaskFromSubtasks(
-            parentTask.subtasks || [],
-            editingTaskId
-          ),
-        };
-
-        // Update Local State
-        const updateTasks = (
-          tasks: Task[],
-          targetId: string,
-          updatedTask: Task
-        ): Task[] =>
-          tasks.map((task) =>
-            task.id === targetId
-              ? updatedTask
-              : {
-                  ...task,
-                  subtasks: updateTasks(
-                    task.subtasks || [],
-                    targetId,
-                    updatedTask
-                  ),
-                }
-          );
-
-        const updatedTasks = updateTasks(tasks, parentId, updatedParentTask);
-
-        setTask(updatedTasks);
-
-        // Save Top-Level Parent to Firestore
-        const topLevelParentId = parentId.split(".")[0];
-        const topLevelParent = updatedTasks.find(
-          (task) => task.id === topLevelParentId
-        );
-
-        if (topLevelParent) {
-          const parentRef = doc(tasksCollection, topLevelParentId);
-          await setDoc(parentRef, topLevelParent);
-          console.log("Updated top-level parent in Firestore:", topLevelParent);
-        }
-
-        toast({
-          title: "Subtask Deleted",
-          description: `Subtask "${editingTaskId}" has been successfully deleted.`,
-          status: "success",
-          duration: 3000,
-          isClosable: true,
-        });
-      } else {
-        // Handle Parent Task Deletion
-        const taskRef = doc(tasksCollection, editingTaskId);
-
-        // Delete Parent Task from Firestore
-        await deleteDoc(taskRef);
-
-        // Update Local State
-        setTask((prevTasks) =>
-          prevTasks.filter((task) => task.id !== editingTaskId)
-        );
-
-        toast({
-          title: "Task Deleted",
-          description: `Task "${editingTaskId}" has been successfully deleted.`,
-          status: "success",
-          duration: 3000,
-          isClosable: true,
-        });
+      if (!docSnapshot.exists()) {
+        throw new Error("Project not found");
       }
 
-      // Close modal and reset state
+      const currentData = docSnapshot.data().data || [];
+
+      // Remove task from hierarchy
+      const removeTaskFromHierarchy = (tasks: Task[], taskId: string): Task[] =>
+        tasks
+          .filter((task) => task.id !== taskId)
+          .map((task) => ({
+            ...task,
+            subtasks: removeTaskFromHierarchy(task.subtasks || [], taskId),
+          }));
+
+      const updatedData = removeTaskFromHierarchy(currentData, editingTaskId);
+
+      // Save back to Firestore
+      await setDoc(projectRef, {
+        ...docSnapshot.data(),
+        data: updatedData,
+      });
+
+      setTask(updatedData);
+
+      toast({
+        title: "Task Deleted",
+        description: `Task "${editingTaskId}" has been successfully deleted.`,
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      });
+
       setEditingTaskId(null);
       setIsModalOpen(false);
     } catch (error: any) {
@@ -1221,6 +1056,48 @@ const TaskListPanel: React.FC<{
         <Tbody>{tasks.map((task) => renderTaskRows(task))}</Tbody>
       </Table>
 
+      <Modal isOpen={isDeleteModalOpen} onClose={handleCloseDeleteModal}>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Delete Task</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <Text mb={4}>
+              Are you sure you want to delete the task? This action cannot be
+              undone.
+            </Text>
+            <Text fontWeight="bold" mb={2}>
+              Task Name:{" "}
+              {tasks.find((task) => task.id === editingTaskId)?.name || "N/A"}
+            </Text>
+            <FormControl>
+              <FormLabel>Reason for Deletion : </FormLabel>
+              <Textarea
+                placeholder="Please provide a reason for deleting this task..."
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+              />
+            </FormControl>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" onClick={handleCloseDeleteModal}>
+              Cancel
+            </Button>
+            <Button
+              colorScheme="red"
+              ml={3}
+              onClick={() => {
+                // handleDeleteTask(deleteReason);
+                handleCloseDeleteModal();
+              }}
+              isDisabled={!deleteReason.trim()} // Disable if no reason is provided
+            >
+              Confirm Delete
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
       <Modal isOpen={isModalOpen} onClose={handleCloseModal} size="lg">
         <ModalOverlay />
         <ModalContent minWidth={650} borderRadius="md" boxShadow="xl">
@@ -1310,7 +1187,11 @@ const TaskListPanel: React.FC<{
                     </Button>
                     <Input
                       type="number"
-                      value={newTask.duration === 0 && !isFocused ? "0" : newTask.duration || ""}
+                      value={
+                        newTask.duration === 0 && !isFocused
+                          ? "0"
+                          : newTask.duration || ""
+                      }
                       onChange={handleDurationInputChange}
                       onFocus={() => setIsFocused(true)}
                       onBlur={() => setIsFocused(false)}
@@ -1392,7 +1273,11 @@ const TaskListPanel: React.FC<{
                     </Button>
                     <Input
                       type="number"
-                      value={newTask.actualDuration === 0 && !isFocused ? "0" : newTask.actualDuration || ""}
+                      value={
+                        newTask.actualDuration === 0 && !isFocused
+                          ? "0"
+                          : newTask.actualDuration || ""
+                      }
                       onChange={handleActualDurationInputChange}
                       onFocus={() => setIsFocused(true)}
                       onBlur={() => setIsFocused(false)}
@@ -1592,7 +1477,7 @@ const TaskListPanel: React.FC<{
             {editingTaskId && (
               <Button
                 colorScheme="red"
-                onClick={handleDeleteTask}
+                onClick={handleOpenDeleteModal}
                 fontSize="sm"
               >
                 Delete Task
@@ -1622,41 +1507,38 @@ const TimelinePanel: React.FC<{
   tasks,
   setTask,
 }) => {
-
-
   const [connections, setConnections] = useState<
-  {
-    fromId: string;
-    toId: string;
-    startX: number;
-    startY: number;
-    endX: number;
-    endY: number;
-  }[]
->([]);
+    {
+      fromId: string;
+      toId: string;
+      startX: number;
+      startY: number;
+      endX: number;
+      endY: number;
+    }[]
+  >([]);
 
-const [nodes, setNodes] = useNodesState([]);
-const [edges, setEdges] = useEdgesState([]);
+  const [nodes, setNodes] = useNodesState([]);
+  const [edges, setEdges] = useEdgesState([]);
 
-const generateEdges = () => {
-  const newEdges = connections.map((connection) => ({
-    id: `${connection.fromId}-${connection.toId}`,
-    source: connection.fromId,
-    target: connection.toId,
-    animated: true,
-    style: { stroke: 'orange', strokeWidth: 2 },
-    markerEnd: {
-      type: MarkerType.Arrow, // Correct markerEnd usage
-    },
-  }));
-  setEdges(newEdges);
-};
+  const generateEdges = () => {
+    const newEdges = connections.map((connection) => ({
+      id: `${connection.fromId}-${connection.toId}`,
+      source: connection.fromId,
+      target: connection.toId,
+      animated: true,
+      style: { stroke: "orange", strokeWidth: 2 },
+      markerEnd: {
+        type: MarkerType.Arrow, // Correct markerEnd usage
+      },
+    }));
+    setEdges(newEdges);
+  };
 
-useEffect(() => {
-  generateEdges();
-}, [connections]);
+  useEffect(() => {
+    generateEdges();
+  }, [connections]);
 
-  
   const onConnect = (params: Connection) => {
     const edge: Edge = {
       id: `${params.source}-${params.target}`,
@@ -1667,11 +1549,9 @@ useEffect(() => {
       type: "default",
       style: { stroke: "orange" },
     };
-  
+
     setEdges((prevEdges) => [...prevEdges, edge]);
   };
-  
-
 
   const [selectedConnection, setSelectedConnection] = useState<{
     fromId: string;
@@ -1735,8 +1615,6 @@ useEffect(() => {
     x: number;
     y: number;
   } | null>(null);
-
-
 
   console.log("Connections:", connections);
 
@@ -1911,10 +1789,10 @@ useEffect(() => {
       console.warn("isVisible called with undefined taskId");
       return false;
     }
-  
+
     // Top-level tasks are always visible
     if (!taskId.includes(".")) return true;
-  
+
     // Check if any parent in the hierarchy is expanded
     const parts = taskId.split(".");
     for (let i = parts.length - 1; i > 0; i--) {
@@ -1924,30 +1802,27 @@ useEffect(() => {
         return false;
       }
     }
-  
+
     return true;
   };
-  
 
   const saveConnectionsToFirebase = async (
     connections: {
-      id?: string; // Optional unique ID for each connection
+      id?: string;
       fromId: string;
       toId: string;
       startX: number;
       startY: number;
       endX: number;
       endY: number;
-    }[]
+    }[],
+    projectId: string = "StaticProjectID" // Default to static projectId
   ) => {
     try {
-      const connectionsCollection = collection(db, "connections");
-      const docRef = doc(connectionsCollection, "connectionsDocument"); // Single document to store all connections
-  
-      // Validate connections and assign defaults for optional fields
+      const projectRef = doc(db, "projects", projectId); // Reference scoped to projectId
+
       const connectionsData = connections
         .filter((connection) => {
-          // Filter out invalid connections
           if (
             !connection.fromId ||
             !connection.toId ||
@@ -1962,7 +1837,7 @@ useEffect(() => {
           return true;
         })
         .map((connection) => ({
-          id: connection.id || `${connection.fromId}-${connection.toId}`, // Generate ID if missing
+          id: connection.id || `${connection.fromId}-${connection.toId}`, // Auto-generate ID if missing
           fromId: connection.fromId,
           toId: connection.toId,
           startX: connection.startX,
@@ -1970,15 +1845,18 @@ useEffect(() => {
           endX: connection.endX,
           endY: connection.endY,
         }));
-  
-      // Check if there are valid connections to save
+
       if (connectionsData.length === 0) {
         console.warn("No valid connections to save.");
         return;
       }
-  
-      await setDoc(docRef, { lines: connectionsData }, { merge: true });
-  
+
+      await setDoc(
+        projectRef,
+        { lines: connectionsData }, // Save under "lines"
+        { merge: true }
+      );
+
       console.log("Connections saved to Firebase successfully.");
     } catch (error) {
       console.error("Error saving connections to Firebase:", error);
@@ -1988,22 +1866,20 @@ useEffect(() => {
         status: "error",
         duration: 3000,
         isClosable: true,
-        position: "top",
       });
     }
   };
-  
-  
 
-  const fetchConnectionsFromFirebase = async () => {
+  const fetchConnectionsFromFirebase = async (
+    projectId: string = "StaticProjectID" // Default to static projectId
+  ) => {
     try {
-      const connectionsCollection = collection(db, "connections");
-      const docRef = doc(connectionsCollection, "connectionsDocument");
-      const snapshot = await getDoc(docRef);
-  
+      const projectRef = doc(db, "projects", projectId); // Reference scoped to projectId
+      const snapshot = await getDoc(projectRef);
+
       if (snapshot.exists()) {
         const data = snapshot.data();
-  
+
         if (Array.isArray(data.lines)) {
           const connections = data.lines.map((connection) => ({
             id: connection.id,
@@ -2014,7 +1890,7 @@ useEffect(() => {
             endX: connection.endX,
             endY: connection.endY,
           }));
-  
+
           console.log("Fetched connections from Firebase:", connections);
           return connections;
         } else {
@@ -2022,7 +1898,7 @@ useEffect(() => {
           return [];
         }
       } else {
-        console.warn("No connections document found in Firebase.");
+        console.warn(`No document found for projectId: ${projectId}`);
         return [];
       }
     } catch (error) {
@@ -2033,59 +1909,55 @@ useEffect(() => {
         status: "error",
         duration: 3000,
         isClosable: true,
-        position: "top",
       });
       return [];
     }
   };
-  
 
-  const handleDeleteConnection = async () => {
+  const handleDeleteConnection = async (
+    projectId: string = "StaticProjectID" // Default to static projectId
+  ) => {
     if (!selectedConnection) {
       console.warn("No connection selected for deletion.");
       return;
     }
-  
+
     try {
-      const connectionsCollection = collection(db, "connections");
-      const docRef = doc(connectionsCollection, "connectionsDocument");
-  
-      // Fetch the current connections
-      const snapshot = await getDoc(docRef);
-  
+      const projectRef = doc(db, "projects", projectId); // Reference scoped to projectId
+      const snapshot = await getDoc(projectRef);
+
       if (snapshot.exists()) {
         const data = snapshot.data();
-  
+
         if (Array.isArray(data.lines)) {
-          // Filter out the selected connection
           const updatedConnections = data.lines.filter(
             (connection) =>
               connection.fromId !== selectedConnection.fromId ||
               connection.toId !== selectedConnection.toId
           );
-  
-          // Update the document with the new connections array
-          await setDoc(docRef, { lines: updatedConnections }, { merge: true });
-  
-          // Update local state
+
+          await setDoc(
+            projectRef,
+            { lines: updatedConnections },
+            { merge: true }
+          );
+
           setConnections(updatedConnections);
-  
           setSelectedConnection(null);
-          onClose();
-  
+
           toast({
             title: "Connection Deleted",
-            description: "The selected connection has been successfully deleted.",
+            description:
+              "The selected connection has been successfully deleted.",
             status: "success",
             duration: 3000,
             isClosable: true,
-            position: "top",
           });
         } else {
           console.warn("Connections data is not in the expected format:", data);
         }
       } else {
-        console.warn("No connections document found in Firebase.");
+        console.warn(`No document found for projectId: ${projectId}`);
       }
     } catch (error) {
       console.error("Error deleting connection:", error);
@@ -2095,12 +1967,10 @@ useEffect(() => {
         status: "error",
         duration: 3000,
         isClosable: true,
-        position: "top",
       });
     }
   };
-  
-  
+
   const getVisibleConnections = () =>
     connections.filter(({ fromId, toId }) => {
       // Ensure both IDs are valid
@@ -2108,20 +1978,24 @@ useEffect(() => {
         console.warn("Invalid connection:", { fromId, toId });
         return false;
       }
-  
+
       // Ensure both ends of the connection are visible
       return isVisible(fromId) && isVisible(toId);
     });
-  
+
   console.log("selected collections", selectedConnection);
 
   useEffect(() => {
-    saveConnectionsToFirebase(connections);
+    if (connections.length > 0) {
+      saveConnectionsToFirebase(connections, "StaticProjectID");
+    }
   }, [connections]);
 
   useEffect(() => {
     const loadConnections = async () => {
-      const fetchedConnections = await fetchConnectionsFromFirebase();
+      const fetchedConnections = await fetchConnectionsFromFirebase(
+        "StaticProjectID"
+      );
       setConnections(fetchedConnections);
     };
 
@@ -2150,9 +2024,6 @@ useEffect(() => {
     }
   };
 
-
-
-
   type ZoomLevel = "days" | "weeks" | "months" | "quarters" | "years";
 
   const zoomScaleFactors: Record<ZoomLevel, number> = {
@@ -2162,8 +2033,6 @@ useEffect(() => {
     quarters: 90,
     years: 365,
   };
-
-
 
   const calculatePathForZoom = (
     startX: number,
@@ -2179,24 +2048,26 @@ useEffect(() => {
       quarters: 90,
       years: 365,
     };
-  
+
     const scaleFactor = zoomScaleFactors[zoomLevel]; // No error now
     const adjustedStartX = startX / scaleFactor;
     const adjustedStartY = startY;
     const adjustedEndX = endX / scaleFactor;
     const adjustedEndY = endY;
-  
-    return `M ${adjustedStartX},${adjustedStartY} L ${adjustedStartX + 10},${adjustedStartY} L ${adjustedStartX + 10},${adjustedEndY} L ${adjustedEndX},${adjustedEndY}`;
+
+    return `M ${adjustedStartX},${adjustedStartY} L ${
+      adjustedStartX + 10
+    },${adjustedStartY} L ${
+      adjustedStartX + 10
+    },${adjustedEndY} L ${adjustedEndX},${adjustedEndY}`;
   };
-  
-  
 
   const renderConnections = () => {
     const visibleConnections = getVisibleConnections();
-  
+
     return visibleConnections.map((connection, index) => {
       const { startX, startY, endX, endY, fromId, toId } = connection;
-  
+
       if (
         startX == null ||
         startY == null ||
@@ -2210,7 +2081,7 @@ useEffect(() => {
         console.warn("Invalid connection coordinates:", connection);
         return null;
       }
-  
+
       // Dynamically calculate path based on current zoom level
       const adjustedPath = calculatePathForZoom(
         startX,
@@ -2219,7 +2090,7 @@ useEffect(() => {
         endY,
         zoomLevel as ZoomLevel // Ensure zoomLevel is typed correctly
       );
-  
+
       return (
         <path
           key={index}
@@ -2238,7 +2109,7 @@ useEffect(() => {
       );
     });
   };
-  
+
   const renderTemporaryLine = () => {
     if (!draggingConnection || draggingConnection.endX === undefined)
       return null;
@@ -2256,9 +2127,6 @@ useEffect(() => {
       />
     );
   };
-
-
-  
 
   const [isEditMode, setIsEditMode] = useState(false);
   const { expandedTaskIds, toggleExpandedTask } = useTaskContext();
@@ -2535,9 +2403,11 @@ useEffect(() => {
 
   // Utility functions
 
-
-
-  const updateConnectionCoordinates = (taskId: string, newX: any, newY: any) => {
+  const updateConnectionCoordinates = (
+    taskId: string,
+    newX: any,
+    newY: any
+  ) => {
     setConnections((prevConnections) =>
       prevConnections.map((connection) => {
         if (connection.fromId === taskId) {
@@ -2558,7 +2428,6 @@ useEffect(() => {
     );
   };
 
-
   const updateConnectionsOnDrag = (taskId: string) => {
     setConnections((prevConnections) =>
       prevConnections.map((connection) => {
@@ -2577,7 +2446,7 @@ useEffect(() => {
             }
           }
         }
-  
+
         // Update `endX`, `endY` if the task is the "to" task
         if (connection.toId === taskId) {
           const toCircle = document.getElementById(`${taskId}-end`);
@@ -2593,20 +2462,22 @@ useEffect(() => {
             }
           }
         }
-  
+
         return connection; // Return unchanged connection if not related to this task
       })
     );
   };
-  
 
   const handleDragStop = async (task: Task, dragX: number) => {
+    const projectId = "StaticProjectID";
+
     const timelineDuration =
       new Date(maxDate).getTime() - new Date(minDate).getTime();
     const daysMoved = Math.round(
       (dragX / timelineWidth) * (timelineDuration / (1000 * 60 * 60 * 24))
     );
-  
+
+    // Helper function to update task dates recursively
     const updateTaskDates = (tasks: Task[], targetTaskId: string): Task[] =>
       tasks.map((t) => {
         if (t.id === targetTaskId) {
@@ -2624,27 +2495,34 @@ useEffect(() => {
               .slice(0, 10),
           };
         }
-  
-        // Recursively update subtasks if they exist
+
+        // Recursively update subtasks
         if (t.subtasks && t.subtasks.length > 0) {
           return {
             ...t,
             subtasks: updateTaskDates(t.subtasks, targetTaskId),
           };
         }
-  
+
         return t;
       });
-  
+
+    // Update tasks in the local state
     const updatedTasks = updateTaskDates(tasks, task.id);
-  
-    setTask(updatedTasks); // Update local state immediately
-  
-    // Separate Firestore update logic
+    setTask(updatedTasks);
+
     try {
-      const tasksCollection = collection(db, "tasks");
-  
-      // Find the top-level task to update in Firestore
+      // Firestore logic
+      const projectRef = doc(db, "projects", projectId);
+      const projectSnapshot = await getDoc(projectRef);
+
+      if (!projectSnapshot.exists()) {
+        throw new Error("Project not found");
+      }
+
+      const currentData = projectSnapshot.data()?.data || [];
+
+      // Helper to find the top-level parent task
       const findTopLevelTask = (tasks: Task[], id: string): Task | null => {
         for (const t of tasks) {
           if (t.id === id) return t;
@@ -2655,23 +2533,30 @@ useEffect(() => {
         }
         return null;
       };
-  
+
       if (task.id.includes(".")) {
+        // Task is a subtask
         const parentId = task.id.split(".").slice(0, -1).join(".");
-        const topLevelParentId = parentId.split(".")[0]; // Top-level parent
+        const topLevelParentId = parentId.split(".")[0]; // Get top-level parent ID
         const topLevelTask = findTopLevelTask(updatedTasks, topLevelParentId);
-  
+
         if (topLevelTask) {
-          const parentRef = doc(tasksCollection, topLevelParentId);
-          await setDoc(parentRef, topLevelTask, { merge: true });
+          // Update top-level task in Firestore
+          await setDoc(projectRef, {
+            ...projectSnapshot.data(),
+            data: updatedTasks,
+          });
           console.log("Updated top-level parent in Firestore:", topLevelTask);
         }
       } else {
-        // Update the top-level task directly
-        const taskRef = doc(tasksCollection, task.id);
+        // Task is a top-level task
         const updatedTask = updatedTasks.find((t) => t.id === task.id);
         if (updatedTask) {
-          await setDoc(taskRef, updatedTask, { merge: true });
+          // Update the task in Firestore
+          await setDoc(projectRef, {
+            ...projectSnapshot.data(),
+            data: updatedTasks,
+          });
           console.log("Task updated in Firestore:", updatedTask);
         }
       }
@@ -2679,25 +2564,27 @@ useEffect(() => {
       console.error("Error updating task in Firestore:", error);
     }
 
-updateConnectionsOnDrag(task.id);
-
+    // Update connections if required
+    updateConnectionsOnDrag(task.id);
   };
 
   const calculateTaskXPosition = (task: Task, dragX: number): number => {
     const timelineDuration =
       new Date(maxDate).getTime() - new Date(minDate).getTime();
-    const daysFromStart = (dragX / timelineWidth) * (timelineDuration / (1000 * 60 * 60 * 24));
+    const daysFromStart =
+      (dragX / timelineWidth) * (timelineDuration / (1000 * 60 * 60 * 24));
     const newStart = new Date(minDate).getTime() + daysFromStart * 86400000;
-    return ((newStart - new Date(minDate).getTime()) / timelineDuration) * timelineWidth;
+    return (
+      ((newStart - new Date(minDate).getTime()) / timelineDuration) *
+      timelineWidth
+    );
   };
-  
+
   const calculateTaskYPosition = (task: Task): number => {
     const taskHeight = 60; // Height of each row
     const taskIndex = tasks.findIndex((t) => t.id === task.id);
     return taskIndex * taskHeight + taskHeight / 2; // Center within the row
   };
-  
-  
 
   const calculateBarWidth = (
     taskStart: string,
@@ -3054,8 +2941,12 @@ updateConnectionsOnDrag(task.id);
     }
   }, [selectedConnection]);
 
-
-  const updateConnections = (taskId: string, type: "start" | "end", x: number, y: number) => {
+  const updateConnections = (
+    taskId: string,
+    type: "start" | "end",
+    x: number,
+    y: number
+  ) => {
     setConnections((prevConnections) =>
       prevConnections.map((connection) => {
         if (type === "start" && connection.fromId === taskId) {
@@ -3068,8 +2959,6 @@ updateConnectionsOnDrag(task.id);
       })
     );
   };
-  
-
 
   return (
     <Box
@@ -3133,11 +3022,10 @@ updateConnectionsOnDrag(task.id);
         </Button>
 
         <Flex align="center">
-          <Text fontWeight={"bold"} minWidth={"60px"} fontSize={"sm"} mx={4}>Set Role:</Text>
-          <Select
-          fontSize={"sm"}
-            width="180px"
-          >
+          <Text fontWeight={"bold"} minWidth={"60px"} fontSize={"sm"} mx={4}>
+            Set Role:
+          </Text>
+          <Select fontSize={"sm"} width="180px">
             <option value="user">ARC BIM Modellers</option>
             <option value="weeks">ARC Design Consultant</option>
             <option value="months">ARC Design Coordinator</option>
@@ -3146,12 +3034,10 @@ updateConnectionsOnDrag(task.id);
             <option value="years">Portal Developer</option>
           </Select>
         </Flex>
-        
       </Flex>
 
-
       <svg
-        pointerEvents="none" 
+        pointerEvents="none"
         style={{
           position: "absolute",
           top: 0,
@@ -3176,21 +3062,13 @@ updateConnectionsOnDrag(task.id);
           </marker>
         </defs>
         <div style={{ height: "500px", width: "100%" }}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-        
-          onConnect={onConnect}
-          fitView
-        >
-          <Background />
-          <Controls />
-        </ReactFlow>
-      </div>
+          <ReactFlow nodes={nodes} edges={edges} onConnect={onConnect} fitView>
+            <Background />
+            <Controls />
+          </ReactFlow>
+        </div>
         {renderTemporaryLine()}
       </svg>
-
- 
 
       {/* Modal for showing connection details */}
       <Modal isOpen={isOpen} onClose={onClose}>
@@ -3214,7 +3092,10 @@ updateConnectionsOnDrag(task.id);
                     <Button colorScheme="blue" onClick={handleSaveConnection}>
                       Save
                     </Button>
-                    <Button colorScheme="red" onClick={handleDeleteConnection}>
+                    <Button
+                      colorScheme="red"
+                      onClick={() => handleDeleteConnection("StaticProjectID")}
+                    >
                       Delete
                     </Button>
                   </Box>
@@ -3359,7 +3240,6 @@ updateConnectionsOnDrag(task.id);
                         </Box>
                         <DraggableOrStatic
                           isEditMode={isEditMode}
-                          
                           onStop={(e, data) => {
                             handleDragStop(subtask, data.x);
                           }}
@@ -3578,7 +3458,6 @@ updateConnectionsOnDrag(task.id);
                     <DraggableOrStatic
                       isEditMode={isEditMode}
                       onStop={(e, data) => handleDragStop(task, data.x)}
-                      
                     >
                       <Box
                         position="absolute"
@@ -3669,9 +3548,7 @@ updateConnectionsOnDrag(task.id);
                               onMouseDown={(e) =>
                                 handleCircleDragStart(e, task.id, "start")
                               }
-                          
                               onMouseUp={(e) => handleCircleDragEnd(e, task.id)}
-    
                             />
                           </svg>
                         )}
@@ -3697,9 +3574,7 @@ updateConnectionsOnDrag(task.id);
                               onMouseDown={(e) =>
                                 handleCircleDragStart(e, task.id, "end")
                               }
-                           
                               onMouseUp={(e) => handleCircleDragEnd(e, task.id)}
-                           
                             />
                           </svg>
                         )}
