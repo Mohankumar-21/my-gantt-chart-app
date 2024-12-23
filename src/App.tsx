@@ -59,6 +59,8 @@ import {
   setDoc,
   getDoc,
   deleteDoc,
+  updateDoc,
+  arrayUnion,
 } from "@firebase/firestore";
 import { useToast } from "@chakra-ui/react";
 import ReactFlow, {
@@ -82,7 +84,7 @@ interface Task {
   actualDuration?: number;
   dependency: string;
   risk: string;
-  wbs?: string;
+  wbs: string;
   inlineProgress?: number;
   progress: number;
   predecessor?: string;
@@ -90,6 +92,7 @@ interface Task {
   status: string;
   type: string;
   stage?: string;
+  parentId?: string;
   subtasks?: Task[];
   dependencies?: { taskId: string; type: "FS" | "SS" | "FF" | "SF" }[];
 }
@@ -125,10 +128,15 @@ const TaskListPanel: React.FC<{
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false); // Modal state
+  const [selectedAudit, setSelectedAudit] = useState<any[]>([]); // Audit data for the selected task
+  const [selectedTaskName, setSelectedTaskName] = useState<string>("");
 
   const [newTask, setNewTask] = useState<Task>({
     id: "",
+    wbs: "",
     name: "",
+    parentId: "0",
     plannedStart: "",
     plannedEnd: "",
     actualStart: "",
@@ -206,11 +214,33 @@ const TaskListPanel: React.FC<{
       }));
     }
   }, [newTask.actualStart, newTask.actualDuration]);
+
+  const findTaskById = (tasks: Task[], taskId: string): Task | undefined => {
+    for (const task of tasks) {
+      if (task.id === taskId) return task; // Task found at the current level
+      if (task.subtasks && task.subtasks.length > 0) {
+        const foundTask = findTaskById(task.subtasks, taskId); // Search in subtasks
+        if (foundTask) return foundTask;
+      }
+    }
+    return undefined; // Task not found
+  };
+
   const handleAddTaskClick = (parentId?: string) => {
+    const generateRandomId = () =>
+      Date.now().toString() + Math.floor(Math.random() * 1000);
+
     if (parentId) {
-      const parentTask = tasks.find((task) => task.id === parentId);
+      const parentTask = findTaskById(tasks, parentId);
+      if (!parentTask) {
+        console.error("Parent task not found for ID:", parentId);
+        return;
+      }
+      const subtaskNumber = (parentTask.subtasks?.length || 0) + 1;
+      const newWbs = `${parentTask.wbs}.${subtaskNumber}`;
       setNewTask({
-        id: `${parentId}.${(parentTask?.subtasks?.length || 0) + 1}`,
+        id: generateRandomId(),
+        wbs: newWbs,
         name: "",
         plannedStart: "",
         plannedEnd: "",
@@ -221,6 +251,7 @@ const TaskListPanel: React.FC<{
         risk: "Medium",
         progress: 0,
         type: "task",
+        parentId: parentId,
         role: "Coordinator",
         stage: "DR-1",
         status: "Not-started",
@@ -230,7 +261,8 @@ const TaskListPanel: React.FC<{
     } else {
       // Creating a parent task
       setNewTask({
-        id: `${tasks.length + 1}`,
+        id: generateRandomId(),
+        wbs: `${tasks.length + 1}`,
         name: "",
         plannedStart: "",
         plannedEnd: "",
@@ -239,6 +271,7 @@ const TaskListPanel: React.FC<{
         duration: 0,
         dependency: "",
         risk: "Medium",
+        parentId: "0",
         progress: 0,
         type: "project",
         role: "Coordinator",
@@ -488,7 +521,6 @@ const TaskListPanel: React.FC<{
         status: "warning",
         duration: 3000,
         isClosable: true,
-        position: "top",
       });
       return;
     }
@@ -501,12 +533,10 @@ const TaskListPanel: React.FC<{
         status: "error",
         duration: 3000,
         isClosable: true,
-        position: "top",
       });
       return;
     }
 
-    // Validation for plannedEnd being after plannedStart
     if (new Date(newTask.plannedEnd) <= new Date(newTask.plannedStart)) {
       toast({
         title: "Validation Error",
@@ -514,7 +544,6 @@ const TaskListPanel: React.FC<{
         status: "error",
         duration: 3000,
         isClosable: true,
-        position: "top",
       });
       return;
     }
@@ -528,26 +557,24 @@ const TaskListPanel: React.FC<{
         : [];
 
       // Check if the task is a subtask
-      if (newTask.id.includes(".")) {
-        const parentId = newTask.id.split(".").slice(0, -1).join(".");
-
+      if (newTask.parentId && newTask.parentId !== "0") {
         // Find and update the parent task
-        const updateParentTask = (tasks: Task[], targetId: string): Task[] =>
+        const updateParentTask = (tasks: Task[], parentId: string): Task[] =>
           tasks.map((task) =>
-            task.id === targetId
+            task.id === parentId
               ? {
                   ...task,
-                  subtasks: [...(task.subtasks || []), newTask],
+                  subtasks: [...(task.subtasks || []), { ...newTask }],
                 }
               : {
                   ...task,
                   subtasks: task.subtasks
-                    ? updateParentTask(task.subtasks, targetId)
+                    ? updateParentTask(task.subtasks, parentId)
                     : [],
                 }
           );
 
-        updatedData = updateParentTask(updatedData, parentId);
+        updatedData = updateParentTask(updatedData, newTask.parentId);
       } else {
         // Add the new task to the top level
         updatedData.push({
@@ -561,6 +588,7 @@ const TaskListPanel: React.FC<{
         container: projectId,
         data: updatedData,
         links: [],
+        taskAudits: [],
       });
 
       // Update local state
@@ -586,9 +614,10 @@ const TaskListPanel: React.FC<{
       });
     }
   };
-
   const handleUpdateTask = async () => {
     const projectId = "StaticProjectID";
+
+    // Validation checks
     if (
       !newTask.name ||
       !newTask.plannedStart ||
@@ -647,6 +676,7 @@ const TaskListPanel: React.FC<{
       });
       return;
     }
+
     try {
       const projectRef = doc(db, "projects", projectId);
       const docSnapshot = await getDoc(projectRef);
@@ -655,7 +685,92 @@ const TaskListPanel: React.FC<{
         throw new Error("Project not found");
       }
 
+      // Get current project data and audits
       const currentData = docSnapshot.data().data || [];
+      const currentAudits = docSnapshot.data().TaskAudits || {};
+
+      // Helper function to find the task being updated
+      const findTaskById = (
+        tasks: Task[],
+        taskId: string
+      ): Task | undefined => {
+        for (const task of tasks) {
+          if (task.id === taskId) return task;
+          if (task.subtasks && task.subtasks.length > 0) {
+            const foundTask = findTaskById(task.subtasks, taskId);
+            if (foundTask) return foundTask;
+          }
+        }
+        return undefined;
+      };
+
+      const existingTask = findTaskById(currentData, editingTaskId);
+      if (!existingTask) {
+        throw new Error("Task not found in the hierarchy");
+      }
+
+      // Calculate the differences
+      const isEqual = (a: any, b: any): boolean => {
+        // Handle cases where a or b is undefined/null
+        if (a === null || a === undefined || b === null || b === undefined) {
+          return a === b;
+        }
+
+        // Handle primitive types
+        if (typeof a !== "object" || typeof b !== "object") {
+          return a === b;
+        }
+
+        // Check if arrays
+        if (Array.isArray(a) && Array.isArray(b)) {
+          if (a.length !== b.length) return false; // Different lengths
+          return a.every((item, index) => isEqual(item, b[index])); // Compare each item
+        }
+
+        // Handle objects (deep comparison for keys and values)
+        const aKeys = Object.keys(a);
+        const bKeys = Object.keys(b);
+
+        if (aKeys.length !== bKeys.length) return false;
+
+        return aKeys.every((key) => isEqual(a[key], b[key]));
+      };
+
+      // Calculate differences
+      const changes: any[] = [];
+      Object.keys(newTask).forEach((key) => {
+        const keyName = key as keyof Task; // Type assertion for keyof Task
+
+        // Normalize values for comparison
+        const oldValue =
+          keyName === "progress"
+            ? Math.round(existingTask[keyName] as number) // Round progress
+            : existingTask[keyName];
+
+        const newValue =
+          keyName === "progress"
+            ? Math.round(newTask[keyName] as number) // Round progress
+            : newTask[keyName];
+
+        // Compare the normalized values
+        if (!isEqual(newValue, oldValue)) {
+          changes.push({
+            field: keyName,
+            previousValue: oldValue, // Use normalized value
+            newValue: newValue, // Use normalized value
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      });
+
+      // Update audits for this task
+      if (!currentAudits[editingTaskId]) {
+        currentAudits[editingTaskId] = []; // Initialize if it doesn't exist
+      }
+      currentAudits[editingTaskId] = [
+        ...currentAudits[editingTaskId],
+        ...changes, // Append changes
+      ];
 
       // Update task in the hierarchy
       const updateTaskInHierarchy = (tasks: Task[], taskId: string): Task[] =>
@@ -671,9 +786,17 @@ const TaskListPanel: React.FC<{
       const updatedData = updateTaskInHierarchy(currentData, editingTaskId);
 
       // Save back to Firestore
-      await setDoc(projectRef, {
-        ...docSnapshot.data(),
-        data: updatedData,
+      await updateDoc(projectRef, {
+        [`data`]: updatedData, // Update the task hierarchy
+        [`taskAudits.${editingTaskId}`]: arrayUnion(
+          ...changes.map((change, index) => ({
+            id: currentAudits[editingTaskId].length + index, // Incremental ID
+            field: change.field,
+            previousValue: change.previousValue,
+            newValue: change.newValue,
+            updatedAt: change.updatedAt,
+          }))
+        ),
       });
 
       setTask(updatedData);
@@ -702,7 +825,7 @@ const TaskListPanel: React.FC<{
 
   const handleDeleteTask = async (reason: string) => {
     const projectId = "StaticProjectID";
-  
+
     if (!editingTaskId) {
       toast({
         title: "Error",
@@ -714,18 +837,18 @@ const TaskListPanel: React.FC<{
       });
       return;
     }
-  
+
     try {
       const projectRef = doc(db, "projects", projectId);
       const docSnapshot = await getDoc(projectRef);
-  
+
       if (!docSnapshot.exists()) {
         throw new Error("Project not found");
       }
-  
+
       const currentData = docSnapshot.data().data || [];
       const currentAudits = docSnapshot.data().audits || [];
-  
+
       // Find the task being deleted
       const findTaskById = (tasks: Task[], taskId: string): Task | null => {
         for (const task of tasks) {
@@ -737,13 +860,13 @@ const TaskListPanel: React.FC<{
         }
         return null;
       };
-  
+
       const deletedTask = findTaskById(currentData, editingTaskId);
-  
+
       if (!deletedTask) {
         throw new Error("Task not found in hierarchy");
       }
-  
+
       // Prepare audit entry
       const auditEntry = {
         taskId: deletedTask.id,
@@ -752,7 +875,7 @@ const TaskListPanel: React.FC<{
         role: deletedTask.role,
         deletionDate: new Date().toISOString(),
       };
-  
+
       // Remove task from hierarchy
       const removeTaskFromHierarchy = (tasks: Task[], taskId: string): Task[] =>
         tasks
@@ -761,19 +884,19 @@ const TaskListPanel: React.FC<{
             ...task,
             subtasks: removeTaskFromHierarchy(task.subtasks || [], taskId),
           }));
-  
+
       const updatedData = removeTaskFromHierarchy(currentData, editingTaskId);
-  
+
       // Save updated data and audits to Firestore
       await setDoc(projectRef, {
         ...docSnapshot.data(),
         data: updatedData,
-        audits: [...currentAudits, auditEntry], // Append new audit entry
+        taskAudits: [...currentAudits, auditEntry], // Append new audit entry
       });
-  
+
       // Update local state
       setTask(updatedData);
-  
+
       toast({
         title: "Task Deleted",
         description: `Task "${editingTaskId}" has been successfully deleted.`,
@@ -781,7 +904,7 @@ const TaskListPanel: React.FC<{
         duration: 3000,
         isClosable: true,
       });
-  
+
       setEditingTaskId(null);
       setIsModalOpen(false);
     } catch (error: any) {
@@ -795,7 +918,31 @@ const TaskListPanel: React.FC<{
       });
     }
   };
-  
+
+  const handleViewAudits = async (taskId: string, taskName: string) => {
+    const projectId = "StaticProjectID"; // Replace with dynamic ID if required
+    try {
+      const projectRef = doc(db, "projects", projectId);
+      const docSnapshot = await getDoc(projectRef);
+
+      if (docSnapshot.exists()) {
+        const audits = docSnapshot.data().taskAudits || {}; // Fetch audits
+        const taskAudits = audits[taskId] || []; // Get specific task audits
+        setSelectedAudit(taskAudits); // Update the selected audit data
+        setSelectedTaskName(taskName); // Update the task name for display
+        setIsAuditModalOpen(true); // Open the modal
+      }
+    } catch (error) {
+      console.error("Error fetching audits:", error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch audit details.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
 
   const renderTaskRows = (task: Task, level = 0): React.ReactNode => (
     <React.Fragment key={`task-${task.id}`}>
@@ -813,7 +960,7 @@ const TaskListPanel: React.FC<{
           textAlign="center"
           height="60px"
         >
-          {task.id}
+          {task.wbs}
         </Td>
 
         <Td
@@ -929,6 +1076,15 @@ const TaskListPanel: React.FC<{
             onClick={() => handleAddTaskClick(task.id)}
             size="sm"
           />
+        </Td>
+        <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
+          <Button
+            colorScheme="teal"
+            size="sm"
+            onClick={() => handleViewAudits(task.id, task.name)} // Pass taskId and name
+          >
+            View
+          </Button>
         </Td>
       </Tr>
       {/* Render Subtasks if the task is expanded */}
@@ -1082,10 +1238,73 @@ const TaskListPanel: React.FC<{
                 size="lg"
               />
             </Th>
+            <Th
+              borderColor={"gray.200"}
+              borderRightWidth="1px"
+              textAlign="center"
+              minWidth={"120px"}
+            >
+              Audits
+            </Th>
           </Tr>
         </Thead>
         <Tbody>{tasks.map((task) => renderTaskRows(task))}</Tbody>
       </Table>
+
+      <Modal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        size="xl"
+      >
+        <ModalOverlay />
+        <ModalContent maxWidth="800px">
+          <ModalHeader>Audit Details - {selectedTaskName}</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            {selectedAudit.length > 0 ? (
+              <Box maxHeight="400px" overflowY="auto">
+                <Table variant="striped" colorScheme="gray">
+                  <Thead position="sticky" top={0} zIndex={1} bg="gray.100">
+                    <Tr>
+                      <Th>Field</Th>
+                      <Th>Previous Value</Th>
+                      <Th>New Value</Th>
+                      <Th>Updated At</Th>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {selectedAudit
+                      .sort(
+                        (a, b) =>
+                          new Date(b.updatedAt).getTime() - // Sort by date (descending)
+                          new Date(a.updatedAt).getTime()
+                      )
+                      .map((audit, index) => (
+                        <Tr key={index}>
+                          <Td>{audit.field}</Td>
+                          <Td>{audit.previousValue || "N/A"}</Td>
+                          <Td>{audit.newValue || "N/A"}</Td>
+                          <Td>{new Date(audit.updatedAt).toLocaleString()}</Td>
+                        </Tr>
+                      ))}
+                  </Tbody>
+                </Table>
+              </Box>
+            ) : (
+              <Text>No audit logs found for this task.</Text>
+            )}
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              colorScheme="blue"
+              mr={3}
+              onClick={() => setIsAuditModalOpen(false)}
+            >
+              Close
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       <Modal isOpen={isDeleteModalOpen} onClose={handleCloseDeleteModal}>
         <ModalOverlay />
@@ -1884,7 +2103,7 @@ const TimelinePanel: React.FC<{
 
       await setDoc(
         projectRef,
-        { lines: connectionsData }, // Save under "lines"
+        { links: connectionsData }, // Save under "lines"
         { merge: true }
       );
 
@@ -1912,15 +2131,25 @@ const TimelinePanel: React.FC<{
         const data = snapshot.data();
 
         if (Array.isArray(data.lines)) {
-          const connections = data.lines.map((connection) => ({
-            id: connection.id,
-            fromId: connection.fromId,
-            toId: connection.toId,
-            startX: connection.startX,
-            startY: connection.startY,
-            endX: connection.endX,
-            endY: connection.endY,
-          }));
+          const connections = data.links.map(
+            (connection: {
+              id: any;
+              fromId: any;
+              toId: any;
+              startX: any;
+              startY: any;
+              endX: any;
+              endY: any;
+            }) => ({
+              id: connection.id,
+              fromId: connection.fromId,
+              toId: connection.toId,
+              startX: connection.startX,
+              startY: connection.startY,
+              endX: connection.endX,
+              endY: connection.endY,
+            })
+          );
 
           console.log("Fetched connections from Firebase:", connections);
           return connections;
@@ -1969,7 +2198,7 @@ const TimelinePanel: React.FC<{
 
           await setDoc(
             projectRef,
-            { lines: updatedConnections },
+            { links: updatedConnections },
             { merge: true }
           );
 
