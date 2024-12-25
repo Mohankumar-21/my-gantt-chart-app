@@ -49,6 +49,13 @@ import {
   Tooltip,
   useDisclosure,
   Textarea,
+  Accordion,
+  AccordionIcon,
+  AccordionButton,
+  AccordionItem,
+  AccordionPanel,
+  Badge,
+  Heading,
 } from "@chakra-ui/react";
 import { db } from "./firebase/firebaseconfig";
 import {
@@ -131,6 +138,8 @@ const TaskListPanel: React.FC<{
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false); // Modal state
   const [selectedAudit, setSelectedAudit] = useState<any[]>([]); // Audit data for the selected task
   const [selectedTaskName, setSelectedTaskName] = useState<string>("");
+  const [isDeletedAuditModalOpen, setIsDeletedAuditModalOpen] = useState(false);
+  const [deletedAudits, setDeletedAudits] = useState<any[]>([]);
 
   const [newTask, setNewTask] = useState<Task>({
     id: "",
@@ -503,6 +512,7 @@ const TaskListPanel: React.FC<{
   const handleSaveTask = async () => {
     const projectId = "StaticProjectID";
 
+    // Validation checks
     if (
       !newTask.name ||
       !newTask.plannedStart ||
@@ -552,9 +562,13 @@ const TaskListPanel: React.FC<{
       const projectRef = doc(db, "projects", projectId);
       const docSnapshot = await getDoc(projectRef);
 
+      // Fetch existing data
       let updatedData = docSnapshot.exists()
         ? docSnapshot.data().data || []
         : [];
+
+      const existingLinks = docSnapshot.data()?.links || [];
+      const existingAudits = docSnapshot.data()?.taskAudits || {};
 
       // Check if the task is a subtask
       if (newTask.parentId && newTask.parentId !== "0") {
@@ -583,13 +597,17 @@ const TaskListPanel: React.FC<{
         });
       }
 
-      // Save the updated data back to Firestore
-      await setDoc(projectRef, {
-        container: projectId,
-        data: updatedData,
-        links: [],
-        taskAudits: [],
-      });
+      // Save the updated data back to Firestore with merge option
+      await setDoc(
+        projectRef,
+        {
+          container: projectId,
+          data: updatedData,
+          links: existingLinks, // Preserve existing links
+          taskAudits: existingAudits, // Preserve existing audits
+        },
+        { merge: true } // Preserve old data and merge new updates
+      );
 
       // Update local state
       setTask(updatedData);
@@ -614,6 +632,7 @@ const TaskListPanel: React.FC<{
       });
     }
   };
+
   const handleUpdateTask = async () => {
     const projectId = "StaticProjectID";
 
@@ -846,8 +865,9 @@ const TaskListPanel: React.FC<{
         throw new Error("Project not found");
       }
 
+      // Get current project data and audits
       const currentData = docSnapshot.data().data || [];
-      const currentAudits = docSnapshot.data().audits || [];
+      const currentAudits = docSnapshot.data().taskAudits || {}; // Audits grouped by Task ID
 
       // Find the task being deleted
       const findTaskById = (tasks: Task[], taskId: string): Task | null => {
@@ -867,39 +887,56 @@ const TaskListPanel: React.FC<{
         throw new Error("Task not found in hierarchy");
       }
 
-      // Prepare audit entry
-      const auditEntry = {
-        taskId: deletedTask.id,
-        taskName: deletedTask.name,
-        reason,
-        role: deletedTask.role,
-        deletionDate: new Date().toISOString(),
+      // Prepare deletion audit entry
+      const deletionEntry = {
+        id: (currentAudits[editingTaskId]?.length || 0) + 1, // Increment ID within the same task audit
+        field: "deletion",
+        previousValue: null,
+        newValue: {
+          taskName: deletedTask.name,
+          role: deletedTask.role,
+          reason,
+        },
+        updatedAt: new Date().toISOString(),
       };
+
+      // Append the deletion audit under the same Task ID
+      if (!currentAudits[editingTaskId]) {
+        currentAudits[editingTaskId] = []; // Initialize if missing
+      }
+
+      currentAudits[editingTaskId] = [
+        ...currentAudits[editingTaskId], // Preserve previous audits
+        deletionEntry, // Add new deletion audit
+      ];
 
       // Remove task from hierarchy
       const removeTaskFromHierarchy = (tasks: Task[], taskId: string): Task[] =>
         tasks
-          .filter((task) => task.id !== taskId)
+          .filter((task) => task.id !== taskId) // Remove the matching task
           .map((task) => ({
             ...task,
-            subtasks: removeTaskFromHierarchy(task.subtasks || [], taskId),
+            subtasks: removeTaskFromHierarchy(task.subtasks || [], taskId), // Recursively remove subtasks
           }));
 
       const updatedData = removeTaskFromHierarchy(currentData, editingTaskId);
 
       // Save updated data and audits to Firestore
-      await setDoc(projectRef, {
-        ...docSnapshot.data(),
-        data: updatedData,
-        taskAudits: [...currentAudits, auditEntry], // Append new audit entry
-      });
+      await setDoc(
+        projectRef,
+        {
+          data: updatedData,
+          taskAudits: currentAudits, // Store audits under the same task ID
+        },
+        { merge: true } // Preserve existing data while updating
+      );
 
       // Update local state
       setTask(updatedData);
 
       toast({
         title: "Task Deleted",
-        description: `Task "${editingTaskId}" has been successfully deleted.`,
+        description: `Task "${deletedTask.name}" has been successfully deleted.`,
         status: "success",
         duration: 3000,
         isClosable: true,
@@ -918,17 +955,24 @@ const TaskListPanel: React.FC<{
       });
     }
   };
-
   const handleViewAudits = async (taskId: string, taskName: string) => {
     const projectId = "StaticProjectID"; // Replace with dynamic ID if required
     try {
       const projectRef = doc(db, "projects", projectId);
       const docSnapshot = await getDoc(projectRef);
-
+  
       if (docSnapshot.exists()) {
-        const audits = docSnapshot.data().taskAudits || {}; // Fetch audits
-        const taskAudits = audits[taskId] || []; // Get specific task audits
-        setSelectedAudit(taskAudits); // Update the selected audit data
+        const audits = docSnapshot.data().taskAudits || {}; // Fetch all audits
+  
+        // Get audits for the specific task
+        const taskAudits = audits[taskId] || [];
+  
+        // Filter out deletion logs
+        const filteredAudits = taskAudits.filter(
+          (audit: any) => audit.field !== "deletion" // Exclude deletion field
+        );
+  
+        setSelectedAudit(filteredAudits); // Update the selected audit data
         setSelectedTaskName(taskName); // Update the task name for display
         setIsAuditModalOpen(true); // Open the modal
       }
@@ -941,6 +985,44 @@ const TaskListPanel: React.FC<{
         duration: 3000,
         isClosable: true,
       });
+    }
+  };
+  
+
+  const fetchDeletedAudits = async () => {
+    const projectRef = doc(db, "projects", "StaticProjectID");
+    const docSnapshot = await getDoc(projectRef);
+
+    if (docSnapshot.exists()) {
+      const audits = docSnapshot.data().taskAudits || {};
+
+      const deletedAudits: any[] = [];
+
+      // Loop through each task ID in audits
+      Object.keys(audits).forEach((taskId) => {
+        audits[taskId].forEach((audit: any) => {
+          if (audit.field === "deletion") {
+            deletedAudits.push({
+              taskId,
+              taskName: audit.newValue.taskName || "Untitled Task",
+              role: audit.newValue.role || "N/A",
+              reason: audit.newValue.reason || "No reason provided",
+              updatedAt: audit.updatedAt,
+            });
+          }
+        });
+      });
+
+      deletedAudits.sort(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
+
+      // Update state with deleted audits
+      setDeletedAudits(deletedAudits);
+      setIsDeletedAuditModalOpen(true);
+    } else {
+      console.error("No audits found.");
     }
   };
 
@@ -1080,7 +1162,7 @@ const TaskListPanel: React.FC<{
         <Td borderColor="gray.200" borderRightWidth="1px" textAlign="center">
           <Button
             colorScheme="teal"
-            size="sm"
+            size="xs"
             onClick={() => handleViewAudits(task.id, task.name)} // Pass taskId and name
           >
             View
@@ -1117,6 +1199,14 @@ const TaskListPanel: React.FC<{
           }}
         >
           + Add Task
+        </Button>
+
+        <Button colorScheme="red"  color="white"
+          size="sm"
+          fontWeight="bold"
+          borderRadius="md"
+          maxWidth={"300px"} onClick={fetchDeletedAudits}>
+          Deleted Audits
         </Button>
       </Flex>
 
@@ -1250,6 +1340,83 @@ const TaskListPanel: React.FC<{
         </Thead>
         <Tbody>{tasks.map((task) => renderTaskRows(task))}</Tbody>
       </Table>
+
+      <Modal
+        isOpen={isDeletedAuditModalOpen}
+        onClose={() => setIsDeletedAuditModalOpen(false)}
+        size="xl"
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Deleted Task Audits</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            {deletedAudits.length > 0 ? (
+              <Box maxHeight="400px" overflowY="auto">
+                {deletedAudits.map((audit, index) => (
+                  <Box
+                    key={index}
+                    borderWidth="1px"
+                    borderRadius="lg"
+                    overflow="hidden"
+                    boxShadow="sm"
+                    p={4}
+                    mb={4}
+                    bg="gray.50"
+                  >
+                    <Flex
+                      alignItems="center"
+                      justifyContent="space-between"
+                      mb={3}
+                    >
+                      <Heading size="sm">
+                        {audit.taskName || "Untitled Task"}
+                      </Heading>
+                      <Badge colorScheme="red" px={2} py={1}>
+                        Deleted
+                      </Badge>
+                    </Flex>
+
+                    <Text fontSize="sm" fontWeight="medium" mb={2}>
+                      <b>Role:</b> {audit.role || "N/A"}
+                    </Text>
+
+                    <Text fontSize="sm" fontWeight="medium" mb={2}>
+                      <b>Reason:</b> {audit.reason || "No reason provided"}
+                    </Text>
+
+                    <Text fontSize="sm" fontWeight="medium" mb={2}>
+                      <b>Deleted At:</b>{" "}
+                      {new Date(audit.updatedAt).toLocaleString()}
+                    </Text>
+
+                    <Button
+                      colorScheme="teal"
+                      size="sm"
+                      onClick={() =>
+                        handleViewAudits(audit.taskId, audit.taskName)
+                      } // Pass task ID and name
+                    >
+                      View
+                    </Button>
+                  </Box>
+                ))}
+              </Box>
+            ) : (
+              <Text>No deleted audits found.</Text>
+            )}
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              colorScheme="blue"
+              mr={3}
+              onClick={() => setIsDeletedAuditModalOpen(false)}
+            >
+              Close
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       <Modal
         isOpen={isAuditModalOpen}
