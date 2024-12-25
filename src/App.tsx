@@ -79,6 +79,8 @@ import ReactFlow, {
   useNodesState,
 } from "reactflow";
 import { Connection, Edge } from "react-flow-renderer";
+import { saveAs } from "file-saver";
+import * as XLSX from "xlsx";
 
 interface Task {
   id: string;
@@ -161,6 +163,124 @@ const TaskListPanel: React.FC<{
     actualDuration: 0,
     subtasks: [],
   });
+
+  const flattenTasks = (
+    tasks: Task[],
+    parentWbs: string = "",
+    level: number = 0
+  ): any[] => {
+    let flatList: any[] = [];
+
+    tasks.forEach((task, index) => {
+      const currentWbs = parentWbs
+        ? `${parentWbs}.${index + 1}`
+        : `${index + 1}`;
+      flatList.push({
+        WBS: currentWbs,
+        Name: `${"  ".repeat(level)}${task.name}`,
+        ParentID: task.parentId,
+        PlannedStart: task.plannedStart,
+        PlannedEnd: task.plannedEnd,
+        ActualStart: task.actualStart,
+        ActualEnd: task.actualEnd,
+        Duration: task.duration,
+        Dependency: task.dependency,
+        Risk: task.risk,
+        Progress: task.progress,
+        Type: task.type,
+        Role: task.role,
+        Stage: task.stage,
+        Status: task.status,
+        ActualDuration: task.actualDuration,
+        Level: level,
+      });
+
+      if (task.subtasks && task.subtasks.length > 0) {
+        flatList = flatList.concat(
+          flattenTasks(task.subtasks, currentWbs, level + 1)
+        );
+      }
+    });
+
+    return flatList;
+  };
+
+  const handleExportClick = () => {
+    try {
+      if (!tasks || tasks.length === 0) {
+        toast({
+          title: "No Data",
+          description: "There are no tasks to export.",
+          status: "info",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+        return;
+      }
+
+      const flatTasks = flattenTasks(tasks);
+      const worksheet = XLSX.utils.json_to_sheet(flatTasks);
+
+      // Set column widths
+      const wscols = [
+        { wpx: 80 }, // WBS
+        { wpx: 200 }, // Name
+        { wpx: 100 }, // ParentID
+        { wpx: 120 }, // PlannedStart
+        { wpx: 120 }, // PlannedEnd
+        { wpx: 120 }, // ActualStart
+        { wpx: 120 }, // ActualEnd
+        { wpx: 80 }, // Duration
+        { wpx: 100 }, // Dependency
+        { wpx: 80 }, // Risk
+        { wpx: 80 }, // Progress
+        { wpx: 100 }, // Type
+        { wpx: 100 }, // Role
+        { wpx: 100 }, // Stage
+        { wpx: 120 }, // Status
+        { wpx: 120 }, // ActualDuration
+        { hidden: true }, // Level
+      ];
+
+      worksheet["!cols"] = wscols;
+
+      // Add autofilter and freeze panes
+      worksheet["!autofilter"] = { ref: "A1:O1" };
+      worksheet["!freeze"] = { xSplit: 0, ySplit: 1 };
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Tasks");
+
+      const workbookBinary = XLSX.write(workbook, {
+        bookType: "xlsx",
+        type: "array",
+      });
+      const blob = new Blob([workbookBinary], {
+        type: "application/octet-stream",
+      });
+      saveAs(blob, "TasksExport.xlsx");
+
+      toast({
+        title: "Export Successful",
+        description: "Tasks have been exported to Excel successfully.",
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    } catch (error) {
+      console.error("Export Error:", error);
+      toast({
+        title: "Export Failed",
+        description: "An error occurred while exporting tasks.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    }
+  };
 
   const handleRowDoubleClick = (task: Task, parentTaskId?: string) => {
     if (parentTaskId) {
@@ -960,18 +1080,18 @@ const TaskListPanel: React.FC<{
     try {
       const projectRef = doc(db, "projects", projectId);
       const docSnapshot = await getDoc(projectRef);
-  
+
       if (docSnapshot.exists()) {
         const audits = docSnapshot.data().taskAudits || {}; // Fetch all audits
-  
+
         // Get audits for the specific task
         const taskAudits = audits[taskId] || [];
-  
+
         // Filter out deletion logs
         const filteredAudits = taskAudits.filter(
           (audit: any) => audit.field !== "deletion" // Exclude deletion field
         );
-  
+
         setSelectedAudit(filteredAudits); // Update the selected audit data
         setSelectedTaskName(taskName); // Update the task name for display
         setIsAuditModalOpen(true); // Open the modal
@@ -987,7 +1107,6 @@ const TaskListPanel: React.FC<{
       });
     }
   };
-  
 
   const fetchDeletedAudits = async () => {
     const projectRef = doc(db, "projects", "StaticProjectID");
@@ -1201,12 +1320,28 @@ const TaskListPanel: React.FC<{
           + Add Task
         </Button>
 
-        <Button colorScheme="red"  color="white"
+        <Button
+          colorScheme="red"
+          color="white"
           size="sm"
           fontWeight="bold"
           borderRadius="md"
-          maxWidth={"300px"} onClick={fetchDeletedAudits}>
+          maxWidth={"300px"}
+          onClick={fetchDeletedAudits}
+        >
           Deleted Audits
+        </Button>
+
+        <Button
+          colorScheme="red"
+          color="white"
+          size="sm"
+          fontWeight="bold"
+          borderRadius="md"
+          maxWidth={"300px"}
+          onClick={handleExportClick}
+        >
+          Export
         </Button>
       </Flex>
 
